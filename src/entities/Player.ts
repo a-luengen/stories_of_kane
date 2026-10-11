@@ -11,7 +11,7 @@ export interface PlayerInput {
   sprint: boolean;
   fireHeld: boolean;
   reload: boolean;
-  /** Aim point in world space. */
+  /** Aim point in world space: the surface under the crosshair. */
   aim: THREE.Vector3;
 }
 
@@ -136,24 +136,30 @@ export class Player {
       this.pos.z + fz * 0.75 + sz * 0.18,
     );
 
-    // Aim at the picked point at aim-plane height; clamp the vertical slope for close shots.
-    let dx = input.aim.x - origin.x;
-    let dz = input.aim.z - origin.z;
-    const horiz = Math.max(Math.hypot(dx, dz), 0.001);
-    if (horiz < 0.6) {
-      dx = fx;
-      dz = fz;
-    }
-    const hl = Math.max(Math.hypot(dx, dz), 0.001);
-    const slopeDist = Math.max(horiz, 5);
-    const dy = ((rc.aimPlaneHeight - origin.y) / slopeDist) * hl;
-
+    // Scatter the impact around the crosshair. The radius grows faster than linearly with
+    // distance, so far shots are disproportionately harder to land.
     let spread = rc.spreadStanding;
     if (this.mounted) spread = rc.spreadMounted + this.mountSpeed * rc.spreadMountedPerSpeed;
     else if (this.speed() > 0.5) spread = rc.spreadMoving;
-    const yawJitter = (Math.random() - 0.5) * 2 * spread;
-    const yaw = dirToYaw(dx, dz) + yawJitter;
-    const dir = new THREE.Vector3(Math.sin(yaw) * hl, dy, Math.cos(yaw) * hl).normalize();
+    const aim = input.aim.clone();
+    const dist = Math.hypot(aim.x - origin.x, aim.z - origin.z);
+    const radius = dist * Math.tan(spread) * (1 + dist * rc.spreadGrowth);
+    const a = Math.random() * Math.PI * 2;
+    const r = radius * Math.random(); // biased towards the centre
+    aim.x += Math.cos(a) * r;
+    aim.z += Math.sin(a) * r;
+    // Raised surfaces (walls, targets) also scatter vertically; ground shots stay on the ground.
+    if (aim.y > 0.05) aim.y = Math.max(0, aim.y + (Math.random() - 0.5) * radius);
+
+    // Fire straight at that point. If it's right at (or behind) the muzzle, keep the facing
+    // direction so the shot never goes back through the shooter.
+    let dx = aim.x - origin.x;
+    let dz = aim.z - origin.z;
+    if (Math.hypot(dx, dz) < 0.6) {
+      dx = fx * 0.6;
+      dz = fz * 0.6;
+    }
+    const dir = new THREE.Vector3(dx, aim.y - origin.y, dz).normalize();
     return { origin, dir };
   }
 

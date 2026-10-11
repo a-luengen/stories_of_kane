@@ -223,8 +223,36 @@ export class Game {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const u = (this.input.mouseX - rect.left) / rect.width;
     const v = (this.input.mouseY - rect.top) / rect.height;
-    this.rig.pickPlane(u * 2 - 1, -(v * 2 - 1), CONFIG.revolver.aimPlaneHeight, this.aim);
+    this.pickAim(u * 2 - 1, -(v * 2 - 1), this.aim);
     this.cursor = this.input.mouseInside ? { x: Math.floor(u * this.lowW), y: Math.floor(v * this.lowH) } : null;
+  }
+
+  private aimFrom = new THREE.Vector3();
+  private aimTo = new THREE.Vector3();
+  /** The first visible surface under the cursor (target, building, prop or ground) — what the crosshair is on. */
+  private pickAim(ndcX: number, ndcY: number, out: THREE.Vector3): void {
+    const ray = this.rig.pickRay(ndcX, ndcY);
+    const a = this.aimFrom.copy(ray.origin);
+    const b = this.aimTo.copy(ray.origin).addScaledVector(ray.direction, -ray.origin.y / ray.direction.y + 1);
+    // A few passes so buildings dithered away in front of the player don't catch the cursor.
+    for (let pass = 0; pass < 4; pass++) {
+      const wh = this.world.raycast(a.x, a.y, a.z, b.x, b.y, b.z);
+      const th = this.targets.raycast(a, b);
+      if (th && (!wh || th.t <= wh.t)) {
+        out.copy(a).lerp(b, th.t);
+        return;
+      }
+      if (!wh) break;
+      out.copy(a).lerp(b, wh.t);
+      if (!wh.collider || !this.isFadedAt(out.x, out.z)) return;
+      a.copy(out).addScaledVector(ray.direction, 0.05);
+    }
+    out.copy(ray.origin).addScaledVector(ray.direction, -ray.origin.y / ray.direction.y);
+  }
+
+  private isFadedAt(x: number, z: number): boolean {
+    const e = 0.05;
+    return this.occluders.some((o) => o.fade.value > 0.3 && x > o.minX - e && x < o.maxX + e && z > o.minZ - e && z < o.maxZ + e);
   }
 
   private toggleMount(): void {

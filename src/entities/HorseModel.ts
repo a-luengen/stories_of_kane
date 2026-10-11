@@ -19,11 +19,41 @@ const FRONT_Z = 0.72;
 /** Leg phase offsets (fraction of a stride): FL, FR, HL, HR. */
 const WALK_OFFSETS = [0.0, 0.5, 0.75, 0.25];
 const GALLOP_OFFSETS = [0.0, 0.12, 0.55, 0.67];
+/** Mean phase offset of the two forelegs in the gallop. */
+const GALLOP_FRONT_OFFSET = (GALLOP_OFFSETS[0] + GALLOP_OFFSETS[1]) / 2;
 
 interface Leg {
   hip: THREE.Group;
   knee: THREE.Group;
   front: boolean;
+}
+
+/** Low-poly ellipsoid (flat shading keeps it faceted but rounded). */
+function ellip(rx: number, ry: number, rz: number, w = 8, h = 6): THREE.BufferGeometry {
+  const g = new THREE.SphereGeometry(1, w, h);
+  g.scale(rx, ry, rz);
+  return g;
+}
+
+/** Tapered cylinder along Y, pivot at the anchor (0 = centre, 1 = top, -1 = bottom). */
+function taper(rTop: number, rBot: number, h: number, anchorY = 0, seg = 7): THREE.BufferGeometry {
+  const g = new THREE.CylinderGeometry(rTop, rBot, h, seg);
+  if (anchorY !== 0) g.translate(0, (-anchorY * h) / 2, 0);
+  return g;
+}
+
+/** Tapered cylinder along Z, centred, narrow end (rFront) towards +Z. */
+function taperZ(rFront: number, rBack: number, len: number, open = false): THREE.BufferGeometry {
+  const g = new THREE.CylinderGeometry(rFront, rBack, len, 8, 1, open);
+  g.rotateX(Math.PI / 2);
+  return g;
+}
+
+/** Capsule along Z (`len` = straight section between the caps). */
+function capsuleZ(r: number, len: number): THREE.BufferGeometry {
+  const g = new THREE.CapsuleGeometry(r, len, 3, 8);
+  g.rotateX(Math.PI / 2);
+  return g;
 }
 
 /** Low-poly horse, forward = +Z, with procedural gait, lean and rear-back. */
@@ -34,6 +64,7 @@ export class HorseModel {
   private pitchPivot = new THREE.Group();
   private body = new THREE.Group();
   private neck = new THREE.Group();
+  private head = new THREE.Group();
   private tail = new THREE.Group();
   private legs: Leg[] = [];
   private phase = 0;
@@ -54,32 +85,40 @@ export class HorseModel {
     const b = this.body;
 
     // Barrel + chest + rump.
-    part(boxGeo(0.64, 0.74, 1.5), coat, 0, 1.36, 0, b);
-    part(boxGeo(0.7, 0.7, 0.56), coat, 0, 1.47, -0.7, b); // rump (slightly higher)
-    part(boxGeo(0.62, 0.74, 0.46), coat, 0, 1.42, 0.76, b); // chest
-    part(boxGeo(0.52, 0.12, 1.1), PAL.wood, 0, 0.98, 0, b); // belly
+    part(capsuleZ(0.34, 1.0), coat, 0, 1.36, 0, b).scale.set(0.95, 1.08, 1);
+    part(ellip(0.36, 0.39, 0.42), coat, 0, 1.45, -0.66, b); // rump (slightly higher)
+    part(ellip(0.32, 0.39, 0.36), coat, 0, 1.41, 0.66, b); // chest
+    part(ellip(0.27, 0.1, 0.55), PAL.wood, 0, 1.02, 0, b); // belly
 
     // Neck + head.
     this.neck.position.set(0, 1.6, 0.92);
     b.add(this.neck);
-    const neckMesh = part(boxGeo(0.34, 0.95, 0.42, -1), coat, 0, 0, 0, this.neck);
+    const neckMesh = part(taper(0.14, 0.24, 0.95, -1), coat, 0, 0, 0, this.neck);
+    neckMesh.scale.set(0.8, 1, 1.15);
     neckMesh.rotation.x = 0.62;
-    const mane = part(boxGeo(0.1, 0.9, 0.16, -1), PAL.ink, 0, 0.05, -0.2, this.neck);
+    const mane = part(boxGeo(0.07, 0.9, 0.12, -1), PAL.ink, 0, 0.05, -0.2, this.neck);
     mane.rotation.x = 0.62;
-    const head = new THREE.Group();
+    const head = this.head;
     head.position.set(0, 0.78, 0.5);
     this.neck.add(head);
-    part(boxGeo(0.3, 0.3, 0.42), coat, 0, 0, 0, head);
-    part(boxGeo(0.24, 0.24, 0.36), coat, 0, -0.08, 0.32, head); // muzzle
-    part(boxGeo(0.25, 0.1, 0.1), PAL.ink, 0, -0.14, 0.48, head); // nose
-    part(boxGeo(0.06, 0.2, 0.26), PAL.cream, 0, 0.06, 0.22, head).position.set(0, 0.07, 0.27); // blaze
-    for (const s of [-1, 1]) part(boxGeo(0.07, 0.16, 0.07, -1), coat, s * 0.1, 0.12, -0.1, head); // ears
-    part(boxGeo(0.32, 0.05, 0.05), PAL.brown, 0, -0.02, 0.3, head); // bridle
+    part(ellip(0.15, 0.17, 0.18), coat, 0, 0, -0.02, head); // cheek / skull
+    const face = part(taperZ(0.1, 0.15, 0.62), coat, 0, -0.05, 0.18, head); // face tapering to the muzzle
+    face.scale.x = 0.85;
+    face.rotation.x = 0.3;
+    part(ellip(0.09, 0.075, 0.06), PAL.ink, 0, -0.14, 0.46, head); // nose
+    part(boxGeo(0.06, 0.03, 0.3), PAL.cream, 0, 0.03, 0.3, head).rotation.x = 0.3; // blaze
+    for (const s of [-1, 1]) {
+      part(new THREE.ConeGeometry(0.045, 0.16, 4), coat, s * 0.08, 0.19, -0.1, head); // ears
+      part(boxGeo(0.03, 0.04, 0.05), PAL.ink, s * 0.135, 0.04, 0.04, head); // eyes
+    }
+    const bridle = part(taperZ(0.125, 0.125, 0.04, true), PAL.brown, 0, -0.094, 0.323, head);
+    bridle.scale.x = 0.85;
+    bridle.rotation.x = 0.3;
 
     // Tail.
     this.tail.position.set(0, 1.62, -0.98);
     b.add(this.tail);
-    const tailMesh = part(boxGeo(0.14, 0.85, 0.14, 1), PAL.ink, 0, 0, 0, this.tail);
+    const tailMesh = part(taper(0.06, 0.11, 0.85, 1), PAL.ink, 0, 0, 0, this.tail);
     tailMesh.rotation.x = -0.35;
 
     // Saddle, blanket.
@@ -102,12 +141,14 @@ export class HorseModel {
       hip.position.set(x, HIP_Y + 0.1, z);
       b.add(hip);
       // Hind thighs are chunkier than forearms.
-      part(front ? boxGeo(0.2, 0.55, 0.24, 1) : boxGeo(0.24, 0.6, 0.36, 1), coat, 0, front ? 0 : 0.06, front ? 0 : -0.04, hip);
+      if (front) part(taper(0.12, 0.085, 0.55, 1), coat, 0, 0, 0, hip);
+      else part(taper(0.16, 0.085, 0.62, 1), coat, 0, 0.08, -0.04, hip).scale.z = 1.45;
       const knee = new THREE.Group();
       knee.position.set(0, -0.52, 0);
       hip.add(knee);
-      part(boxGeo(0.13, 0.48, 0.14, 1), dark, 0, 0, 0, knee);
-      part(boxGeo(0.16, 0.08, 0.18, 1), PAL.ink, 0, -0.46, 0.01, knee);
+      part(taper(0.07, 0.055, 0.48, 1), dark, 0, 0, 0, knee);
+      part(ellip(0.07, 0.06, 0.075), dark, 0, -0.4, 0.01, knee); // fetlock
+      part(taper(0.07, 0.09, 0.09, 1), PAL.ink, 0, -0.45, 0.01, knee); // hoof
       this.legs.push({ hip, knee, front });
     }
   }
@@ -161,8 +202,13 @@ export class HorseModel {
     this.lean = damp(this.lean, targetLean, 6, dt);
     this.root.rotation.z = this.lean;
 
-    // Head: forward at speed, up when rearing, idle sway.
-    this.neck.rotation.x = lerp(0.05, 0.35, s) * (1 - this.rear) - this.rear * 0.35 + (moving ? Math.sin(this.phase * Math.PI * 4) * 0.06 : Math.sin(this.time * 0.7) * 0.05);
+    // Head: forward at speed, up when rearing, idle sway. In the gallop the head and neck counter the
+    // forelegs: thrown back while the front feet reach forward, stretched out as they sweep back.
+    const frontReach = moving ? Math.sin((this.phase + GALLOP_FRONT_OFFSET) * Math.PI * 2) * gallopMix : 0;
+    const nod = moving ? Math.sin(this.phase * Math.PI * 4) * 0.06 * (1 - gallopMix) : Math.sin(this.time * 0.7) * 0.05;
+    this.neck.rotation.x = lerp(0.05, 0.35, s) * (1 - this.rear) - this.rear * 0.35 + nod - frontReach * 0.22;
+    this.neck.position.z = 0.92 - frontReach * 0.05;
+    this.head.rotation.x = frontReach * 0.08;
     this.tail.rotation.x = lerp(0, -0.9, s) + Math.sin(this.time * 3) * 0.08;
     this.tail.rotation.z = Math.sin(this.time * 2.1) * (0.1 + s * 0.2);
   }

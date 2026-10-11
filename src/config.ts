@@ -69,13 +69,14 @@ export const CONFIG = {
     reloadTime: 1.5,
     bulletSpeed: 72,
     bulletRange: 46,
+    /** Base spread angles; the scatter radius at distance d is d·tan(spread)·(1 + d·spreadGrowth). */
     spreadStanding: 0.8 * DEG,
     spreadMoving: 2.2 * DEG,
     spreadMounted: 3.6 * DEG,
     /** Extra spread per unit of horse speed (radians). */
     spreadMountedPerSpeed: 0.18 * DEG,
-    /** Cursor ray is intersected with a ground-parallel plane at this height (0 = ground). */
-    aimPlaneHeight: 1.0,
+    /** How fast inaccuracy compounds with distance (per world unit). 0 = purely angular spread. */
+    spreadGrowth: 0.1,
     tracerLength: 1.6,
   },
 

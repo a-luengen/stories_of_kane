@@ -125,15 +125,14 @@ export class CameraRig {
   }
 
   private ray = new THREE.Ray();
-  /** Intersect the cursor (NDC of the visible area) with the horizontal plane y = height. */
-  pickPlane(ndcX: number, ndcY: number, height: number, out: THREE.Vector3): THREE.Vector3 {
+  /** World-space ray through the cursor (NDC of the visible area). Shared instance; copy to keep. */
+  pickRay(ndcX: number, ndcY: number): THREE.Ray {
     const v = this.view;
     this.ray.origin
       .copy(v.position)
       .addScaledVector(this.right, ndcX * v.right)
       .addScaledVector(this.up, ndcY * v.top);
     this.ray.direction.copy(this.back).negate();
-    const t = (height - this.ray.origin.y) / this.ray.direction.y;
-    return this.ray.at(t, out);
+    return this.ray;
   }
 }

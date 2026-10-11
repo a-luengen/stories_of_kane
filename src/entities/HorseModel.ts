@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { boxGeo, part } from '../render/materials';
 import { PAL } from '../render/palette';
+import { HorseTail } from './HorseTail';
 import { clamp, damp, lerp } from '../util/math';
 
 export interface HorsePose {
@@ -65,7 +66,8 @@ export class HorseModel {
   private body = new THREE.Group();
   private neck = new THREE.Group();
   private head = new THREE.Group();
-  private tail = new THREE.Group();
+  private tail = new HorseTail(PAL.ink);
+  private prevSpeed = 0;
   private legs: Leg[] = [];
   private phase = 0;
   private time = 0;
@@ -115,11 +117,9 @@ export class HorseModel {
     bridle.scale.x = 0.85;
     bridle.rotation.x = 0.3;
 
-    // Tail.
-    this.tail.position.set(0, 1.62, -0.98);
-    b.add(this.tail);
-    const tailMesh = part(taper(0.06, 0.11, 0.85, 1), PAL.ink, 0, 0, 0, this.tail);
-    tailMesh.rotation.x = -0.35;
+    // Tail: a segment chain hanging from the top of the rump, same colour as the mane.
+    this.tail.root.position.set(0, 1.7, -1.02);
+    b.add(this.tail.root);
 
     // Saddle, blanket.
     part(boxGeo(0.72, 0.06, 0.8), PAL.red, 0, 1.71, -0.05, b);
@@ -209,7 +209,8 @@ export class HorseModel {
     this.neck.rotation.x = lerp(0.05, 0.35, s) * (1 - this.rear) - this.rear * 0.35 + nod - frontReach * 0.22;
     this.neck.position.z = 0.92 - frontReach * 0.05;
     this.head.rotation.x = frontReach * 0.08;
-    this.tail.rotation.x = lerp(0, -0.9, s) + Math.sin(this.time * 3) * 0.08;
-    this.tail.rotation.z = Math.sin(this.time * 2.1) * (0.1 + s * 0.2);
+    const accel = dt > 0 ? (p.speed - this.prevSpeed) / dt : 0;
+    this.prevSpeed = p.speed;
+    this.tail.update(dt, { speed01: s, accel, turnRate: p.angularVelocity, pivoting: p.pivoting, braking: p.braking, gaitPhase: this.phase });
   }
 }

@@ -1,2 +1,3 @@
 node_modules
-#dist --  include for github pages
+# Built by the GitHub Pages workflow (.github/workflows/deploy.yml)
+dist

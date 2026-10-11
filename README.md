@@ -7,7 +7,12 @@ npm install
 npm run dev        # http://localhost:5173  (?mode=sandbox | ?mode=wave skips the menu, &wave=N starts at wave N)
 npm test           # horse, weapons, nav grid, NPCs, inventory, waves, economy, revive, map tests (vitest)
 npm run build      # typecheck + production build
+npm run preview    # serve the build at http://localhost:4173/stories_of_kane/ (as on GitHub Pages)
 ```
+
+Live at **https://a-luengen.github.io/stories_of_kane/**. Every push to `main` runs the tests, builds and
+deploys there (`.github/workflows/deploy.yml`). One-time setup: repo Settings → Pages → Source:
+**GitHub Actions**. The build's base path (`/stories_of_kane/`) is set in `vite.config.ts`.
 
 ## Controls
 

@@ -4,7 +4,7 @@ const DEG = Math.PI / 180;
 export const CONFIG = {
   game: {
     /** Title on the main menu (placeholder). */
-    title: 'DUST & LEAD',
+    title: 'Stories of Kane',
     /** localStorage key for the best wave reached. */
     bestWaveKey: 'dust-and-lead.bestWave',
   },
@@ -15,9 +15,12 @@ export const CONFIG = {
   },
 
   render: {
-    /** Base low-res size; actual size = window / largest integer factor that fits this base. */
-    baseWidth: 320,
-    baseHeight: 180,
+    /** 
+     * Base low-res size; 
+     * actual size = window / largest integer factor that fits this base.
+     * */
+    baseWidth: 320 * 1.5,
+    baseHeight: 180 * 1.5,
     /** World units covered by one low-res pixel (constant zoom regardless of window size). */
     unitsPerPixel: 1 / 11,
     pixelate: true,
@@ -162,6 +165,18 @@ export const CONFIG = {
   },
 
   horse: {
+    /** Tail chain (spring physics per segment). */
+    tail: {
+      segments: 5,
+      length: 1.0,
+      /** Spring of the first segment towards its pose (1/s²). */
+      stiffness: 70,
+      /** Spring of each further segment towards its parent (softer down the chain). */
+      followStiffness: 120,
+      damping: 9,
+      /** Seconds between idle fly-swatting swishes. */
+      swishInterval: [2, 6] as [number, number],
+    },
     canterSpeed: 7.5,
     gallopSpeed: 12.5,
     /** Base acceleration (units/s²) before ease-in/ease-out shaping; ~2s standstill → gallop. */

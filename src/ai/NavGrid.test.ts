@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CollisionWorld } from './Colliders';
+import { CollisionWorld } from '../world/Colliders';
 import { NavGrid } from './NavGrid';
 
 describe('NavGrid', () => {

@@ -21,6 +21,8 @@ export interface Target {
   hit(point: THREE.Vector3, dir: THREE.Vector3, info: HitInfo): BurstKind;
   /** Per-step animation (static targets; actors update themselves). */
   update?(dt: number): void;
+  /** Bullets pass through targets on the shooter's team (outlaws don't shoot each other). */
+  readonly team?: string;
 }
 
 class Bottle implements Target {
@@ -182,6 +184,11 @@ export class TargetSystem {
     this.actors.push(t);
   }
 
+  removeActor(t: Target): void {
+    const i = this.actors.indexOf(t);
+    if (i >= 0) this.actors.splice(i, 1);
+  }
+
   private add(t: Target): void {
     this.targets.push(t);
     this.group.add(t.object);
@@ -193,6 +200,7 @@ export class TargetSystem {
     for (const list of [this.targets, this.actors]) {
       for (const target of list) {
         if (target === ignore) continue;
+        if (ignore?.team && target.team === ignore.team) continue;
         const h = target.test(a, b);
         if (h && (!best || h.t < best.t)) best = { ...h, target };
       }

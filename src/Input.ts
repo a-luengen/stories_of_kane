@@ -23,6 +23,8 @@ export class Input {
       if (e.button === 0) {
         this.mouseDown = true;
         this.pressed.add('Mouse0');
+      } else if (e.button === 2) {
+        this.pressed.add('Mouse2');
       }
     });
     window.addEventListener('mouseup', (e) => {

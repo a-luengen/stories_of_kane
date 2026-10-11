@@ -1,8 +1,22 @@
-import { Game } from './Game';
+import { Engine } from './core/Engine';
+import { GameStateManager } from './core/GameStateManager';
+import { SandboxMode } from './modes/SandboxMode';
+import { WaveMode } from './modes/WaveMode';
 
 const container = document.getElementById('app')!;
-const game = new Game(container);
-game.start();
+const engine = new Engine(container);
+const states = new GameStateManager(engine, {
+  sandbox: (e) => new SandboxMode(e),
+  wave: (e, host, opts) => new WaveMode(e, host, opts),
+});
+states.boot(new URLSearchParams(location.search));
+engine.start((dt) => states.frame(dt));
 
 // Handy for poking at things from the devtools console.
-(window as unknown as { game: Game }).game = game;
+(window as unknown as { game: unknown }).game = {
+  engine,
+  states,
+  get session() {
+    return states.mode?.session ?? null;
+  },
+};

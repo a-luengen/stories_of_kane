@@ -2,14 +2,17 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { CONFIG } from '../config';
 import { NPCS } from '../data/npcs';
+import { ITEMS } from '../data/items';
+import { MERCHANT_SHOPS } from '../data/shop';
+import { Economy } from '../modes/Economy';
 import type { NpcDef } from '../data/types';
 import { PAL } from '../render/palette';
 import { GridContainer } from '../items/GridContainer';
 import { createItem } from '../items/ItemInstance';
 import { takeAll } from '../items/transfer';
 import { WEAPONS } from '../data/weapons';
-import { buildWorld } from '../world/World';
-import { NavGrid } from '../world/NavGrid';
+import { buildSandboxMap as buildWorld } from '../world/maps/sandbox';
+import { NavGrid } from '../ai/NavGrid';
 import type { Npc } from './Npc';
 import { NpcSystem } from './NpcSystem';
 import { TargetSystem } from './Targets';
@@ -33,9 +36,9 @@ function setup() {
 describe('NPCs', () => {
   it('spawn with names, distinct outfits and the configured weapons', () => {
     const { sys } = setup();
-    expect(sys.npcs).toHaveLength(4);
+    expect(sys.npcs).toHaveLength(6);
     for (const n of sys.npcs) expect(n.name).toMatch(/^\w+ \w+$/);
-    expect(sys.npcs.map((n) => n.weaponDef?.id ?? null)).toEqual(['revolver', null, 'rifle', 'shotgun']);
+    expect(sys.npcs.map((n) => n.weaponDef?.id ?? null)).toEqual(['revolver', null, 'rifle', 'shotgun', null, null]);
     expect(sys.npcs.every((n) => n.mode === 'routine')).toBe(true);
   });
 
@@ -129,7 +132,7 @@ describe('NPCs', () => {
       lines: { greet: ['Repent.'] },
     };
     const sys = new NpcSystem([...NPCS, fifth], wd.collision, nav, wd.occluders);
-    const npc = sys.npcs[4];
+    const npc = sys.npcs[sys.npcs.length - 1];
     expect(npc.name).toBe('Silas Crane');
     expect(npc.weaponDef?.id).toBe('derringer');
     npc.interact();
@@ -179,6 +182,44 @@ describe('NPCs', () => {
     expect(gunman.label).toBe(`Loot ${gunman.name} (empty)`);
     expect(bag.items.some((i) => i.defId === 'revolver' && i.loadedRounds === 6)).toBe(true);
     void sys;
+  });
+
+  it('two merchants (a man and a woman) trade instead of talking', () => {
+    const { sys, player } = setup();
+    const [gunsmith, tailor] = sys.npcs.filter((n) => n.def.shop);
+    expect([gunsmith.def.shop, tailor.def.shop]).toEqual(['gunsmith', 'tailor']);
+    expect([gunsmith.def.appearance.body, tailor.def.appearance.body]).toEqual(['male', 'female']);
+    expect(gunsmith.def.routine.kind).toBe('lean');
+    expect(gunsmith.label).toBe(`Trade with ${gunsmith.name}`);
+    const opened: string[] = [];
+    tailor.onTrade = (n) => opened.push(n.name);
+    tailor.interact();
+    expect(opened).toEqual([tailor.name]);
+    // They stand on open ground in front of the buildings, and flee (unarmed) when shot.
+    for (const n of [gunsmith, tailor]) {
+      const p = { x: n.pos.x, z: n.pos.z };
+      wd.collision.resolveCircle(p, CONFIG.npc.radius);
+      expect(Math.hypot(p.x - n.pos.x, p.z - n.pos.z)).toBeLessThan(1e-3); // not inside anything
+    }
+    sys.onPlayerHitNpc(tailor, player);
+    expect(tailor.mode).toBe('flee');
+    expect(tailor.canInteract()).toBe(false);
+  });
+
+  it('the gunsmith sells guns, ammo and bandages; the tailor only clothes', () => {
+    const cat = (id: string) => ITEMS[id].category;
+    const guns = MERCHANT_SHOPS.gunsmith;
+    const tailor = MERCHANT_SHOPS.tailor;
+    expect(new Set(guns.stock.map((e) => cat(e.item)))).toEqual(new Set(['weapon', 'ammo', 'consumable']));
+    expect(guns.stock.some((e) => e.item === 'bandage')).toBe(true);
+    expect(tailor.stock.every((e) => cat(e.item) === 'clothing')).toBe(true);
+    expect(tailor.buys).toEqual(['clothing']);
+    // One shared purse for both shops.
+    const purse = { dollars: 100, earned: 0 };
+    const a = new Economy(guns.stock, purse);
+    const b = new Economy(tailor.stock, purse);
+    a.buy(guns.stock.find((e) => e.item === 'bandage')!, new GridContainer(8, 4), Infinity);
+    expect(b.wallet).toBe(80);
   });
 
   it('hostile and fleeing NPCs cannot be talked to', () => {

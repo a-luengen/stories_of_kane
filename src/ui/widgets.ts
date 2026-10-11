@@ -1,3 +1,4 @@
+import type { ShopEntry } from '../data/shop';
 import type { SlotHolder, SlotKey } from '../items/Equipment';
 import type { GridContainer } from '../items/GridContainer';
 import type { IconRenderer } from '../items/IconRenderer';
@@ -19,7 +20,10 @@ export type Zone =
   | ({ kind: 'grid'; grid: GridContainer; cell: number } & Rect)
   | ({ kind: 'slot'; holder: SlotHolder; key: SlotKey; label: string } & Rect)
   | ({ kind: 'button'; label: string; action: () => void } & Rect)
-  | ({ kind: 'preview' } & Rect);
+  | ({ kind: 'preview' } & Rect)
+  | ({ kind: 'stock'; entry: ShopEntry; locked: boolean } & Rect)
+  /** Drop a carried item here to sell it. */
+  | ({ kind: 'sell' } & Rect);
 
 export interface Layout {
   /** Panel frames (dropping outside all of them drops into the world). */
@@ -148,4 +152,16 @@ export function wrapText(text: string, max: number): string[] {
   }
   if (line) lines.push(line);
   return lines;
+}
+
+/** Small pixel arrow cursor (the crosshair is hidden while a panel or menu is open). */
+export function drawCursor(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  const rows = ['1', '11', '121', '1221', '12221', '122221', '1222111', '12121', '11 121', '   11'];
+  rows.forEach((row, j) => {
+    for (let i = 0; i < row.length; i++) {
+      if (row[i] === ' ') continue;
+      ctx.fillStyle = row[i] === '1' ? UI.ink : UI.cream;
+      ctx.fillRect(Math.round(x) + i, Math.round(y) + j, 1, 1);
+    }
+  });
 }

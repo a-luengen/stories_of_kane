@@ -99,7 +99,7 @@ export interface AppearanceConfig {
 
 // ------------------------------------------------------------------------------------ items
 
-export type ItemCategory = 'weapon' | 'ammo' | 'clothing';
+export type ItemCategory = 'weapon' | 'ammo' | 'clothing' | 'consumable';
 
 export interface ItemDef {
   id: string;
@@ -118,6 +118,8 @@ export interface ItemDef {
   clothingId?: string;
   /** Quantity in one "box" when spawned (ammo). */
   boxQuantity?: number;
+  /** Consumables: heal this fraction of max HP over `duration` seconds. */
+  heal?: { fraction: number; duration: number };
 }
 
 /** Inventory entry in NPC data: an item id and optional quantity. */
@@ -148,7 +150,8 @@ export interface NpcDef {
   id: string;
   /** Omit for a random name. */
   name?: string;
-  attitude: 'friendly' | 'neutral';
+  /** 'hostile' (wave enemies only): attacks on sight and always knows where the player is. */
+  attitude: 'friendly' | 'neutral' | 'hostile';
   /** Also turns hostile when it sees the player shoot another NPC nearby. */
   defendsOthers: boolean;
   appearance: AppearanceConfig;
@@ -165,4 +168,10 @@ export interface NpcDef {
   reactionTime?: number;
   /** Overrides the default lines for the NPC's attitude. */
   lines?: Partial<NpcLines>;
+  /** Combat style on top of the weapon's range: sidestep, use cover, or charge. */
+  tactics?: 'strafe' | 'cover' | 'rush';
+  /** Come back at the spawn point after dying (default true). */
+  respawns?: boolean;
+  /** Runs a shop (an id in MERCHANT_SHOPS): E trades instead of talking. */
+  shop?: string;
 }

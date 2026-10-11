@@ -89,6 +89,17 @@ const DEFS: ItemDef[] = [
     boxQuantity: 6,
     icon: { tint: PAL.skyDeep },
   },
+  {
+    id: 'bandage',
+    name: 'Bandage',
+    description: 'Clean linen. Right-click or B to use: heals 40% over 2s.',
+    category: 'consumable',
+    size: { w: 1, h: 1 },
+    stackable: true,
+    maxStack: 5,
+    heal: { fraction: 0.4, duration: 2 },
+    icon: { tint: PAL.red },
+  },
   ...Object.values(ClothingRegistry).map(
     (c): ItemDef => ({
       id: c.id,

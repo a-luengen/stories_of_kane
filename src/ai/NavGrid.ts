@@ -1,5 +1,5 @@
 import type { Vec2 } from '../data/types';
-import type { CollisionWorld } from './Colliders';
+import type { CollisionWorld } from '../world/Colliders';
 
 const DIRS: [number, number, number][] = [
   [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],

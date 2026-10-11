@@ -57,6 +57,14 @@ export class Player implements Target {
   draw = 0;
   hp = CONFIG.player.maxHp;
   dead = false;
+  /** Passive health regeneration (off in wave mode, where bandages are the only heal). */
+  regen = true;
+  /** Seconds of damage immunity left (after a revive). */
+  invulnerable = 0;
+  /** Seconds of bandaging left (heals over time; no shooting meanwhile). */
+  healLeft = 0;
+  private healRate = 0;
+  private healTotal = 0;
   /** 1 right after taking damage, fades to 0 (HUD flash). */
   hurt = 0;
   private sinceHurt = 0;
@@ -203,7 +211,7 @@ export class Player implements Target {
     // Holster on request or after a while without shooting; shooting or reloading draws again.
     this.idle += dt;
     if (input.holster || (this.drawTarget === 1 && this.idle >= CONFIG.player.autoHolsterTime)) this.holster();
-    else if ((input.fireHeld || input.reload) && this.drawTarget === 0 && this.pending === null) {
+    else if ((input.fireHeld || input.reload) && this.drawTarget === 0 && this.pending === null && this.healLeft <= 0) {
       if (this.active === null || !slots[this.active]) this.active = slots.findIndex((w) => w !== null);
       if (this.active < 0) this.active = null;
       if (this.active !== null) {
@@ -227,7 +235,7 @@ export class Player implements Target {
     weapon.update(dt);
 
     if (input.reload) this.reloadQueued = true;
-    if (this.draw < 1) return null;
+    if (this.draw < 1 || this.healLeft > 0) return null;
     if (this.reloadQueued) {
       this.reloadQueued = false;
       if (!weapon.startReload() && weapon.ammo < weapon.def.magazine && weapon.reserve <= 0) this.noAmmo = 1.5;
@@ -292,7 +300,7 @@ export class Player implements Target {
   }
 
   hit(_point: THREE.Vector3, _dir: THREE.Vector3, info: HitInfo): BurstKind {
-    if (!this.dead) {
+    if (!this.dead && this.invulnerable <= 0) {
       this.hp = Math.max(0, this.hp - info.damage);
       this.sinceHurt = 0;
       this.hurt = 1;
@@ -305,13 +313,51 @@ export class Player implements Target {
     if (this.dead) return;
     this.sinceHurt += dt;
     const pc = CONFIG.player;
-    if (this.sinceHurt > pc.regenDelay) this.hp = Math.min(pc.maxHp, this.hp + pc.regenRate * dt);
+    this.invulnerable = Math.max(0, this.invulnerable - dt);
+    if (this.healLeft > 0) {
+      const k = Math.min(dt, this.healLeft);
+      this.hp = Math.min(CONFIG.player.maxHp, this.hp + this.healRate * k);
+      this.healLeft -= k;
+    }
+    if (this.regen && this.sinceHurt > pc.regenDelay) this.hp = Math.min(pc.maxHp, this.hp + pc.regenRate * dt);
   }
 
-  /** Back on your feet with full health (inventory and loaded rounds are kept). */
-  revive(p: THREE.Vector3): void {
+  /** 0..1 bandaging progress, or -1. */
+  get healProgress(): number {
+    return this.healLeft > 0 ? 1 - this.healLeft / this.healTotal : -1;
+  }
+
+  /**
+   * Use a consumable (bandage): takes one from its stack and heals over time; puts the gun away
+   * and blocks shooting while bandaging. Returns why not, or null when it worked.
+   */
+  useItem(item: ItemInstance): string | null {
+    const def = itemDef(item.defId);
+    if (!def.heal) return null;
+    if (this.dead) return 'Not now';
+    if (this.healLeft > 0) return 'Already bandaging';
+    if (this.hp >= CONFIG.player.maxHp) return 'Already at full health';
+    item.quantity--;
+    if (item.quantity <= 0) this.inventory.remove(item);
+    this.healTotal = def.heal.duration;
+    this.healLeft = def.heal.duration;
+    this.healRate = (def.heal.fraction * CONFIG.player.maxHp) / def.heal.duration;
+    this.holster();
+    return null;
+  }
+
+  /** B: use the smallest stack of bandages in the inventory. */
+  useBandage(): string | null {
+    const stacks = this.inventory.items.filter((i) => itemDef(i.defId).heal).sort((a, b) => a.quantity - b.quantity);
+    if (stacks.length === 0) return 'No bandages';
+    return this.useItem(stacks[0]);
+  }
+
+  /** Back on your feet (inventory and loaded rounds are kept). */
+  revive(p: THREE.Vector3, hpFraction = 1): void {
     this.dead = false;
-    this.hp = CONFIG.player.maxHp;
+    this.healLeft = 0;
+    this.hp = CONFIG.player.maxHp * hpFraction;
     this.vel.set(0, 0);
     this.setPosition(p);
   }

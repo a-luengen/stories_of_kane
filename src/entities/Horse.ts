@@ -20,6 +20,10 @@ export class Horse implements Interactable {
   readonly prevPos = new THREE.Vector3();
   private prevHeading = 0;
   ridden = false;
+  /** NPC riding it (wave-mode riders), or null. */
+  riderNpc: object | null = null;
+  /** Steering when not ridden by the player (enemy rider, arriving / leaving on its own). */
+  driver: ((dt: number) => { target: number | null; gallop: boolean }) | null = null;
   /** Interpolated render yaw (heading changes from collisions are smoothed visually). */
   private renderYaw = 0;
   /** Last collision contact this step (for debug). */

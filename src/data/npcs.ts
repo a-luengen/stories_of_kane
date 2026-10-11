@@ -47,7 +47,7 @@ export const NPCS: NpcDef[] = [
     spawn: [4, -3.2],
     routine: {
       kind: 'wander',
-      points: [[-14, -3.6], [-5, -3.4], [3.5, -3.4], [12, -3.6], [20, -3.6], [-16.4, -10], [-16.4, -1], [-16.4, 7]],
+      points: [[-14, -3.6], [-5, -3.4], [3.5, -3.4], [12, -3.6], [20, -3.6], [-16.4, -10], [-16.4, -1], [-15.6, 4.6]],
       jitter: 1.2,
       pause: [2, 6],
     },
@@ -88,10 +88,61 @@ export const NPCS: NpcDef[] = [
     spawn: [44, 14],
     routine: { kind: 'patrol', points: [[44, 44], [-44, 44], [-44, -44], [44, -44]], pause: 2 },
   },
+  {
+    id: 'gunsmith',
+    attitude: 'friendly',
+    defendsOthers: false,
+    shop: 'gunsmith',
+    appearance: {
+      body: 'male',
+      skin: PAL.skin,
+      hair: PAL.brown,
+      hairStyle: 'short',
+      beard: PAL.brown,
+      clothing: {
+        hat: 'cowboy_hat_brown',
+        top: 'shirt_grey',
+        outerwear: 'vest_brown',
+        legs: 'trousers_brown',
+        boots: 'boots_black',
+        belt: 'belt_leather',
+      },
+    },
+    weapon: null,
+    spawn: [15.55, -4.25],
+    // Leaning on the right porch post of the red store on the north row.
+    routine: { kind: 'lean', at: [15.55, -4.25], facing: 0 },
+    lines: { greet: ['Looking for iron?', 'Finest guns this side of the Pecos.'] },
+  },
+  {
+    id: 'tailor',
+    attitude: 'friendly',
+    defendsOthers: false,
+    shop: 'tailor',
+    appearance: {
+      body: 'female',
+      skin: PAL.skin,
+      hair: PAL.darkBrown,
+      hairStyle: 'bun',
+      clothing: { legs: 'dress_red', boots: 'boots_black' },
+    },
+    weapon: null,
+    spawn: [-16.9, 9.2],
+    // On the porch of the big building on the west side, beside the door.
+    routine: { kind: 'idle', at: [-16.9, 9.2], facing: Math.PI / 2 },
+    lines: { greet: ['That coat has seen better days.', 'Something finer, perhaps?'] },
+  },
 ];
 
 /** Default lines per attitude (an NpcDef can override any of them). Font: A-Z 0-9 . , : ! ? ' - / */
 export const DEFAULT_LINES: Record<NpcDef['attitude'], NpcLines> = {
+  hostile: {
+    greet: ['...'],
+    warn: ['Ha!'],
+    hostile: ['There he is!', 'Get him, boys!', 'Your hide\'s worth money!', 'End of the line.'],
+    flee: ['I\'m out! Fall back!'],
+    calm: ['...'],
+  },
   friendly: {
     greet: ['Howdy, stranger!', 'Fine day, ain\'t it?', 'Mind the sun out here.', 'Welcome to town, friend.'],
     warn: ['Hey! Watch where you point that!', 'Easy with that iron!', 'You near hit me!'],

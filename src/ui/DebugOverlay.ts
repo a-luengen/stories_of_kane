@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Horse } from '../entities/Horse';
 
-/** Full-resolution debug canvas (toggle H): horse heading/input arrows, turn radius, speed, FPS. */
+/** Full-resolution debug canvas (toggle F3): horse heading/input arrows, turn radius, speed, FPS. */
 export class DebugOverlay {
   readonly canvas = document.createElement('canvas');
   private ctx: CanvasRenderingContext2D;
@@ -28,13 +28,18 @@ export class DebugOverlay {
     return [((this.v.x + 1) / 2) * this.canvas.width, ((1 - this.v.y) / 2) * this.canvas.height];
   }
 
-  draw(frameDt: number, cam: THREE.Camera, horse: Horse, extra: string[]): void {
+  draw(frameDt: number, cam: THREE.Camera, horse: Horse | null, extra: string[]): void {
     if (frameDt > 0) this.fps += (1 / frameDt - this.fps) * 0.05;
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     if (!this.visible) return;
 
     const scale = Math.max(1, this.canvas.height / 540);
+    const info = [`FPS ${this.fps.toFixed(0)}`, ...extra, 'red = heading, blue = input, yellow = turn radius'];
+    if (!horse) {
+      this.label(info, 10 * scale, 10 * scale, scale);
+      return;
+    }
     const m = horse.motor;
     const p = horse.model.root.position;
     const y = 0.05;
@@ -76,7 +81,7 @@ export class DebugOverlay {
     ];
     this.label(lines, lx + 12 * scale, ly - 30 * scale, scale);
 
-    this.label([`FPS ${this.fps.toFixed(0)}`, ...extra, 'red = heading, blue = input, yellow = turn radius'], 10 * scale, 10 * scale, scale);
+    this.label(info, 10 * scale, 10 * scale, scale);
   }
 
   private arrow(cam: THREE.Camera, x0: number, z0: number, x1: number, z1: number, color: string, scale: number): void {

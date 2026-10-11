@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { CONFIG } from '../config';
 import { StaticBatch } from '../render/StaticBatch';
 import { fadeableToon, vertexToon } from '../render/materials';
 import { PAL } from '../render/palette';
-import { Rng, valueNoise2 } from '../util/math';
-import { CollisionWorld } from './Colliders';
-import type { TargetSystem } from '../entities/Targets';
+import { Rng } from '../util/math';
+import type { CollisionWorld } from './Colliders';
+
+/** Shared map-building blocks: ground, buildings and props (with their colliders). */
 
 export interface Occluder {
   mesh: THREE.Mesh;
@@ -18,18 +18,23 @@ export interface Occluder {
   height: number;
 }
 
+
+/** Everything a map hands to a game session. */
 export interface WorldData {
   group: THREE.Group;
   collision: CollisionWorld;
   occluders: Occluder[];
+  /** Solid footprints NPCs can take cover behind. */
+  cover: { minX: number; minZ: number; maxX: number; maxZ: number }[];
+  /** Half-size of the walkable square (nav grid extent). */
+  half: number;
   playerSpawn: THREE.Vector3;
-  horseSpawn: THREE.Vector3;
+  /** Player horse start (null: no horse at the start). */
+  horseSpawn: THREE.Vector3 | null;
   horseYaw: number;
 }
 
-const HALF = CONFIG.world.size / 2;
-
-function shade(hex: number, f: number): number {
+export function shade(hex: number, f: number): number {
   const c = new THREE.Color(hex);
   const hsl = { h: 0, s: 0, l: 0 };
   c.getHSL(hsl);
@@ -37,124 +42,8 @@ function shade(hex: number, f: number): number {
   return c.getHex();
 }
 
-/**
- * Builds the desert town: ground, buildings, props, targets and colliders.
- *
- * Layout respects the isometric camera (looking towards -X/-Z): building fronts face +Z or +X so
- * they face the viewer, and the camera side of the main street only has low props.
- */
-export function buildWorld(targets: TargetSystem): WorldData {
-  const rng = new Rng(CONFIG.world.seed);
-  const group = new THREE.Group();
-  const batch = new StaticBatch();
-  const cw = new CollisionWorld(HALF);
-  const occluders: Occluder[] = [];
-  const occupied: { x: number; z: number; r: number }[] = [];
-  const reserve = (x: number, z: number, r: number) => occupied.push({ x, z, r });
-  const isFree = (x: number, z: number, r: number) => occupied.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + r);
-
-  group.add(buildGround());
-
-  // ---------------------------------------------------------------- town buildings
-  // [position along the row, width, depth, wall height, wall colour, sign colour]
-  const north: [number, number, number, number, number, number][] = [
-    [-14, 7, 7, 3.6, PAL.woodLight, PAL.cream],
-    [-5, 8, 8, 5.4, PAL.wood, PAL.red],
-    [3.5, 6, 7, 3.4, PAL.woodPale, PAL.darkBrown],
-    [12, 7, 7, 3.8, PAL.red, PAL.cream],
-    [20.5, 6, 6, 3.2, PAL.woodLight, PAL.rust],
-  ];
-  const west: typeof north = [
-    [-10, 7, 7, 3.8, PAL.wood, PAL.cream],
-    [-1, 6, 6, 3.4, PAL.sandDark, PAL.darkBrown],
-    [8, 8, 8, 5.0, PAL.woodPale, PAL.rust],
-  ];
-  for (const [x, w, d, h, wall, sign] of north) {
-    occluders.push(building(cw, x, -6.5 - d / 2, 0, w, d, h, wall, sign, rng));
-  }
-  for (const [z, w, d, h, wall, sign] of west) {
-    occluders.push(building(cw, -19.5 - d / 2, z, Math.PI / 2, w, d, h, wall, sign, rng));
-  }
-  for (const o of occluders) group.add(o.mesh);
-
-  // Water tower behind the north row; trough and rails along the street.
-  waterTower(batch, cw, 7, -21);
-  trough(batch, cw, -3.5, 5.6);
-  trough(batch, cw, 16, 5.6);
-  hitchingRail(batch, cw, -9.5, 5.3);
-  hitchingRail(batch, cw, 7.5, 5.3);
-  hitchingRail(batch, cw, -15.6, -4.8);
-  well(batch, cw, 1, 9.5);
-
-  // Barrels and crates.
-  const barrels: [number, number][] = [
-    [-18.2, -5.0], [-9.7, -4.4], [-0.6, -5.2], [7.2, -4.3], [16.4, -5.1], [24.2, -4.6],
-    [-12.8, 6.0], [-6.4, 6.4], [3.4, 6.2], [11.0, 5.9], [19.6, 6.5], [-17.2, 11.2], [-16.8, -12.3],
-  ];
-  for (const [x, z] of barrels) barrel(batch, cw, x, z, rng);
-  for (const [x, z] of [[-11.8, 6.8], [20.8, 6.0], [24.6, -6.0], [-17.0, 4.8], [-17.6, 12.4]] as const) crate(batch, cw, x, z, rng);
-  // Fence lines on the camera side of the street.
-  fence(batch, cw, -14, 9, -6, 9);
-  fence(batch, cw, 9, 9, 19, 9);
-
-  // ---------------------------------------------------------------- shooting range (east)
-  // Targets face +X (towards the camera side); shoot them from further east.
-  const rangeFence = [...fence(batch, cw, 27, -9, 27, -2), ...fence(batch, cw, 27, 2, 27, 9)];
-  const sideFence = fence(batch, cw, 27, -11, 41, -11);
-  for (const p of [...rangeFence, ...sideFence]) {
-    if (rng.next() < 0.85) targets.addBottle(p, rng.pick([PAL.glass, PAL.glassBrown, PAL.cactus]));
-  }
-  for (const z of [-6, -3, 3, 6]) {
-    targets.addDummy(new THREE.Vector3(31, 0, z), Math.PI / 2);
-    cw.addCircle(31, z, 0.3, 1.9, 'wood', false);
-  }
-  // Corral south-west of town with a few bottles too.
-  const corral = [
-    ...fence(batch, cw, -40, 14, -30, 14),
-    ...fence(batch, cw, -40, 14, -40, 26),
-    ...fence(batch, cw, -40, 26, -30, 26),
-  ];
-  corral.forEach((p, i) => i % 3 === 0 && targets.addBottle(p, rng.pick([PAL.glass, PAL.glassBrown])));
-
-  // ---------------------------------------------------------------- scattered desert props
-  const blocked = (x: number, z: number) =>
-    (x > -29 && x < 27 && z > -25 && z < 12) ||
-    (x > 24 && x < 44 && Math.abs(z) < 14) ||
-    (x > -43 && x < -27 && z > 11 && z < 29);
-  const scatter = (count: number, r: number, place: (x: number, z: number) => void) => {
-    let tries = 0;
-    let placed = 0;
-    while (placed < count && tries++ < count * 40) {
-      const x = rng.range(-HALF + 2, HALF - 2);
-      const z = rng.range(-HALF + 2, HALF - 2);
-      if (blocked(x, z) || !isFree(x, z, r)) continue;
-      reserve(x, z, r);
-      place(x, z);
-      placed++;
-    }
-  };
-  scatter(46, 1.6, (x, z) => cactus(batch, cw, x, z, rng));
-  scatter(34, 1.8, (x, z) => rock(batch, cw, x, z, rng));
-  scatter(40, 0.8, (x, z) => shrub(batch, x, z, rng));
-  for (const [x, z] of [[-24, 14], [25, 13], [26, -16], [-27, -18]] as const) cactus(batch, cw, x, z, rng);
-
-  mesas(batch, rng);
-
-  group.add(batch.build());
-
-  return {
-    group,
-    collision: cw,
-    occluders,
-    playerSpawn: new THREE.Vector3(-2, 0, 1.5),
-    horseSpawn: new THREE.Vector3(-6.5, 0, 2.6),
-    horseYaw: Math.PI / 2,
-  };
-}
-
-// ------------------------------------------------------------------------------------------------
-
-function buildGround(): THREE.Mesh {
+/** 200×200 ground of 1-unit tiles coloured per tile (two triangles share a colour). */
+export function buildGround(groundColor: (x: number, z: number, rng: Rng, first: boolean) => number): THREE.Mesh {
   const size = 200;
   const seg = 200; // 1 unit tiles
   const geo = new THREE.PlaneGeometry(size, size, seg, seg).toNonIndexed();
@@ -184,30 +73,7 @@ function buildGround(): THREE.Mesh {
   return mesh;
 }
 
-const tileCache = new Map<string, number>();
-function groundColor(x: number, z: number, rng: Rng, first: boolean): number {
-  const key = `${x},${z}`;
-  if (!first && tileCache.has(key)) return tileCache.get(key)!;
-  const n = valueNoise2(x * 0.07, z * 0.07, 3) * 0.7 + valueNoise2(x * 0.23, z * 0.23, 7) * 0.3;
-  let col: number = n < 0.3 ? PAL.sandDark : n < 0.64 ? PAL.sand : PAL.sandLight;
-  const r = rng.next();
-  if (r < 0.015) col = PAL.sandPale;
-  else if (r < 0.03) col = PAL.sandDark;
-  // Main street and wheel ruts.
-  const inStreet = (Math.abs(z) < 4.6 && x > -19.5 && x < 30) || (x > -19.5 && x < -13.5 && z > -14 && z < 14);
-  if (inStreet) {
-    col = n < 0.5 ? 0xb08a58 : PAL.sandDark;
-    if (Math.abs(Math.abs(z) - 1.6) < 0.5 && r < 0.7) col = 0x8e6c46;
-  }
-  // Trail to the range.
-  if (x > 26 && x < 44 && Math.abs(z) < 2 && r < 0.6) col = 0xb08a58;
-  // Outside the playable area.
-  if (Math.abs(x) > HALF || Math.abs(z) > HALF) col = n < 0.5 ? PAL.sandDark : PAL.sand;
-  tileCache.set(key, col);
-  return col;
-}
-
-function building(
+export function building(
   cw: CollisionWorld,
   x: number,
   z: number,
@@ -292,7 +158,7 @@ function building(
 }
 
 /** Fence between two axis-aligned points; returns post-top positions (for bottles). */
-function fence(batch: StaticBatch, cw: CollisionWorld, x0: number, z0: number, x1: number, z1: number): THREE.Vector3[] {
+export function fence(batch: StaticBatch, cw: CollisionWorld, x0: number, z0: number, x1: number, z1: number): THREE.Vector3[] {
   const len = Math.hypot(x1 - x0, z1 - z0);
   const n = Math.max(1, Math.round(len / 2));
   const tops: THREE.Vector3[] = [];
@@ -315,7 +181,7 @@ function fence(batch: StaticBatch, cw: CollisionWorld, x0: number, z0: number, x
   return tops;
 }
 
-function barrel(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, rng: Rng): void {
+export function barrel(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, rng: Rng): void {
   const col = rng.pick([PAL.wood, PAL.woodLight, PAL.rust]);
   batch.put(new THREE.CylinderGeometry(0.36, 0.36, 1.0, 8), col, x, 0.5, z);
   batch.put(new THREE.CylinderGeometry(0.39, 0.39, 0.08, 8), PAL.metal, x, 0.22, z);
@@ -324,20 +190,20 @@ function barrel(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, rn
   cw.addCircle(x, z, 0.4, 1.0, 'wood');
 }
 
-function crate(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, rng: Rng): void {
+export function crate(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, rng: Rng): void {
   const s = rng.range(0.7, 0.9);
   batch.box(s, s, s, PAL.woodPale, x, 0, z);
   batch.box(s + 0.04, 0.1, s + 0.04, PAL.wood, x, s * 0.45, z);
   cw.addBox(x - s / 2, z - s / 2, x + s / 2, z + s / 2, s, 'wood');
 }
 
-function trough(batch: StaticBatch, cw: CollisionWorld, x: number, z: number): void {
+export function trough(batch: StaticBatch, cw: CollisionWorld, x: number, z: number): void {
   batch.box(2.2, 0.6, 0.8, PAL.wood, x, 0, z);
   batch.box(2.0, 0.05, 0.6, PAL.skyDeep, x, 0.56, z);
   cw.addBox(x - 1.1, z - 0.4, x + 1.1, z + 0.4, 0.6, 'wood');
 }
 
-function hitchingRail(batch: StaticBatch, cw: CollisionWorld, x: number, z: number): void {
+export function hitchingRail(batch: StaticBatch, cw: CollisionWorld, x: number, z: number): void {
   for (const s of [-1, 1]) {
     batch.box(0.16, 1.0, 0.16, PAL.wood, x + s * 1.2, 0, z);
     cw.addCircle(x + s * 1.2, z, 0.12, 1.0, 'wood');
@@ -345,7 +211,7 @@ function hitchingRail(batch: StaticBatch, cw: CollisionWorld, x: number, z: numb
   batch.box(2.7, 0.12, 0.12, PAL.woodLight, x, 0.9, z);
 }
 
-function well(batch: StaticBatch, cw: CollisionWorld, x: number, z: number): void {
+export function well(batch: StaticBatch, cw: CollisionWorld, x: number, z: number): void {
   batch.put(new THREE.CylinderGeometry(0.85, 0.9, 0.8, 8), PAL.rock, x, 0.4, z);
   batch.put(new THREE.CylinderGeometry(0.62, 0.62, 0.05, 8), PAL.ink, x, 0.81, z);
   for (const s of [-1, 1]) batch.box(0.14, 1.9, 0.14, PAL.wood, x + s * 0.7, 0.4, z);
@@ -354,7 +220,7 @@ function well(batch: StaticBatch, cw: CollisionWorld, x: number, z: number): voi
   cw.addCircle(x, z, 0.92, 1.0, 'rock');
 }
 
-function waterTower(batch: StaticBatch, cw: CollisionWorld, x: number, z: number): void {
+export function waterTower(batch: StaticBatch, cw: CollisionWorld, x: number, z: number): void {
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       batch.box(0.22, 4.2, 0.22, PAL.wood, x + sx * 1.3, 0, z + sz * 1.3);
@@ -371,7 +237,7 @@ function waterTower(batch: StaticBatch, cw: CollisionWorld, x: number, z: number
   batch.put(new THREE.ConeGeometry(1.95, 1.0, 10), PAL.rust, x, 6.9, z);
 }
 
-function cactus(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, rng: Rng): void {
+export function cactus(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, rng: Rng): void {
   const kind = rng.next();
   if (kind < 0.6) {
     // Saguaro.
@@ -412,7 +278,7 @@ function cactus(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, rn
   }
 }
 
-function rock(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, rng: Rng): void {
+export function rock(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, rng: Rng): void {
   const s = rng.range(0.4, 1.3);
   const col = rng.pick([PAL.rock, PAL.rockLight, PAL.sandDark, PAL.rockDark]);
   batch.put(new THREE.DodecahedronGeometry(1, 0), col, x, s * 0.35, z, rng.range(0, 3), rng.range(0, 3), rng.range(0, 3), s * rng.range(0.9, 1.3), s * 0.75, s * rng.range(0.9, 1.3));
@@ -423,7 +289,7 @@ function rock(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, rng:
   cw.addCircle(x, z, s * 1.05, s * 0.9, 'rock');
 }
 
-function shrub(batch: StaticBatch, x: number, z: number, rng: Rng): void {
+export function shrub(batch: StaticBatch, x: number, z: number, rng: Rng): void {
   const col = rng.pick([PAL.cactusLight, PAL.sandDark, PAL.woodPale]);
   for (let i = 0; i < 3; i++) {
     const s = rng.range(0.15, 0.3);
@@ -432,7 +298,7 @@ function shrub(batch: StaticBatch, x: number, z: number, rng: Rng): void {
 }
 
 /** Sandstone mesas framing the playable area (visual only; bounds are enforced separately). */
-function mesas(batch: StaticBatch, rng: Rng): void {
+export function mesas(batch: StaticBatch, rng: Rng, HALF: number): void {
   const ring: [number, number][] = [];
   for (let t = -HALF - 6; t <= HALF + 6; t += 5) {
     ring.push([t, -HALF - 5], [t, HALF + 5], [-HALF - 5, t], [HALF + 5, t]);
@@ -454,4 +320,152 @@ function mesas(batch: StaticBatch, rng: Rng): void {
       layer++;
     }
   }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Outpost / menu props.
+
+/** Batch helpers in a local frame (position + yaw + optional tilt). */
+function local(batch: StaticBatch, x: number, z: number, yaw: number, tiltX = 0, tiltZ = 0, lift = 0) {
+  const m = new THREE.Matrix4().compose(
+    new THREE.Vector3(x, lift, z),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(tiltX, yaw, tiltZ, 'YXZ')),
+    new THREE.Vector3(1, 1, 1),
+  );
+  const box = (w: number, h: number, d: number, col: number, lx: number, ly: number, lz: number, ry = 0) => batch.box(w, h, d, col, lx, ly, lz, ry, m);
+  const put = (geo: THREE.BufferGeometry, col: number, lx: number, ly: number, lz: number, rx = 0, ry = 0, rz = 0) => {
+    const g = geo.clone();
+    g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(lx, ly, lz), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(1, 1, 1)));
+    g.applyMatrix4(m);
+    geo.dispose();
+    batch.add(g, col, new THREE.Matrix4());
+  };
+  return { box, put, m };
+}
+
+/** Circles along a segment (colliders for rotated, elongated props). */
+function capsuleColliders(cw: CollisionWorld, x: number, z: number, yaw: number, halfLen: number, r: number, h: number, surface: 'wood' | 'rock'): void {
+  const n = Math.max(1, Math.round((halfLen * 2) / (r * 1.4)));
+  for (let i = 0; i <= n; i++) {
+    const t = -halfLen + (i / n) * halfLen * 2;
+    cw.addCircle(x + Math.sin(yaw) * t, z + Math.cos(yaw) * t, r, h, surface);
+  }
+}
+
+/** Freight wagon: intact, broken (tilted, a wheel off) or covered (canvas bonnet, the merchant's). */
+export function wagon(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, yaw: number, kind: 'intact' | 'broken' | 'covered'): void {
+  const broken = kind === 'broken';
+  const { box, put } = local(batch, x, z, yaw, broken ? 0.05 : 0, broken ? 0.16 : 0, broken ? -0.12 : 0);
+  // Bed and side boards.
+  box(1.5, 0.12, 3.0, PAL.wood, 0, 0.62, 0);
+  for (const s of [-1, 1]) box(0.08, 0.42, 3.0, PAL.woodLight, s * 0.72, 0.74, 0);
+  box(1.5, 0.42, 0.08, PAL.woodLight, 0, 0.74, -1.48);
+  if (!broken) box(1.5, 0.42, 0.08, PAL.woodLight, 0, 0.74, 1.48);
+  box(0.12, 0.1, 1.6, PAL.wood, 0, 0.45, 2.2); // tongue
+  const wheel = new THREE.CylinderGeometry(0.5, 0.5, 0.1, 10);
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    if (broken && sx === 1 && sz === 1) continue;
+    put(wheel.clone(), PAL.darkBrown, sx * 0.86, 0.5, sz * 1.0, 0, 0, Math.PI / 2);
+    put(new THREE.CylinderGeometry(0.12, 0.12, 0.14, 6), PAL.metal, sx * 0.86, 0.5, sz * 1.0, 0, 0, Math.PI / 2);
+  }
+  wheel.dispose();
+  if (broken) {
+    // The lost wheel lies in the dirt beside it.
+    batch.put(new THREE.CylinderGeometry(0.5, 0.5, 0.1, 10), PAL.darkBrown, x + Math.cos(yaw) * 1.6, 0.06, z - Math.sin(yaw) * 1.6, 0, 0, 0);
+  }
+  if (kind === 'covered') {
+    // Canvas bonnet over hoops.
+    put(new THREE.CylinderGeometry(0.8, 0.8, 2.7, 10, 1, true, -Math.PI / 2, Math.PI), PAL.cream, 0, 1.0, 0, Math.PI / 2, 0, 0);
+    for (const t of [-1.3, 0, 1.3]) put(new THREE.TorusGeometry(0.81, 0.04, 4, 10, Math.PI), PAL.wood, 0, 1.0, t);
+    box(1.4, 0.06, 0.06, PAL.wood, 0, 1.0, 1.36);
+  }
+  capsuleColliders(cw, x, z, yaw, 1.2, 0.8, kind === 'covered' ? 1.8 : 1.1, 'wood');
+}
+
+/** A low wall of sandbags (cover), axis-aligned along X (`alongX`) or Z. */
+export function sandbags(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, len: number, alongX: boolean, rng: Rng): void {
+  const rows = 3;
+  const bag = 0.62;
+  const n = Math.max(1, Math.round(len / bag));
+  for (let r = 0; r < rows; r++) {
+    const offset = (r % 2) * bag * 0.5;
+    for (let i = 0; i < n - (r % 2); i++) {
+      const t = -len / 2 + bag / 2 + offset + i * bag;
+      const col = rng.pick([PAL.sand, PAL.sandLight, PAL.sandDark]);
+      const bx = alongX ? x + t : x;
+      const bz = alongX ? z : z + t;
+      batch.put(new THREE.BoxGeometry(bag * 0.96, 0.24, 0.42), col, bx, 0.12 + r * 0.23, bz, 0, alongX ? 0 : Math.PI / 2, 0, 1, 1, 1);
+    }
+  }
+  const hx = alongX ? len / 2 : 0.24;
+  const hz = alongX ? 0.24 : len / 2;
+  cw.addBox(x - hx, z - hz, x + hx, z + hz, rows * 0.23 + 0.05, 'dirt');
+}
+
+/** Roofless ruin: broken plank walls of uneven height with a doorway, a few fallen boards. */
+export function ruin(batch: StaticBatch, cw: CollisionWorld, x: number, z: number, w: number, d: number, rng: Rng): void {
+  const wall = PAL.woodLight;
+  const t = 0.18;
+  batch.box(w, 0.08, d, PAL.wood, x, 0, z); // floor
+  const segments: [number, number, number, number][] = [
+    [x - w / 2, z - d / 2, x + w / 2, z - d / 2], // back
+    [x - w / 2, z - d / 2, x - w / 2, z + d / 2], // left
+    [x + w / 2, z - d / 2, x + w / 2, z + d / 2], // right
+    [x - w / 2, z + d / 2, x - 0.8, z + d / 2], // front, left of the doorway
+    [x + 0.8, z + d / 2, x + w / 2, z + d / 2], // front, right of it
+  ];
+  for (const [x0, z0, x1, z1] of segments) {
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    const along = Math.abs(x1 - x0) > Math.abs(z1 - z0);
+    // Uneven, partly collapsed: a few chunks of different heights, some gaps.
+    const chunks = Math.max(1, Math.round(len / 1.2));
+    for (let i = 0; i < chunks; i++) {
+      if (rng.next() < 0.18) continue;
+      const a = i / chunks;
+      const b = (i + 1) / chunks;
+      const cx = x0 + (x1 - x0) * (a + b) / 2;
+      const cz = z0 + (z1 - z0) * (a + b) / 2;
+      const cl = len / chunks;
+      const h = rng.range(0.9, 2.6);
+      batch.box(along ? cl : t, h, along ? t : cl, rng.next() < 0.3 ? shade(wall, 0.85) : wall, cx, 0, cz);
+      const hx = along ? cl / 2 : t / 2;
+      const hz = along ? t / 2 : cl / 2;
+      cw.addBox(cx - hx, cz - hz, cx + hx, cz + hz, h, 'wood');
+    }
+    for (const [px, pz] of [[x0, z0], [x1, z1]]) batch.box(0.22, 2.7, 0.22, PAL.wood, px, 0, pz);
+  }
+  // Fallen boards.
+  for (let i = 0; i < 3; i++) {
+    batch.put(new THREE.BoxGeometry(1.6, 0.06, 0.22), wall, x + rng.range(-w / 3, w / 3), 0.12, z + rng.range(-d / 3, d / 3), 0, rng.range(0, Math.PI), rng.range(-0.15, 0.15));
+  }
+}
+
+/**
+ * Canyon wall along an axis-aligned segment: stacked sandstone bands. `height` is the typical
+ * height (keep it low on the camera side, +X / +Z, so it never hides the player).
+ */
+export function cliff(batch: StaticBatch, cw: CollisionWorld, x0: number, z0: number, x1: number, z1: number, height: number, rng: Rng): void {
+  const along = Math.abs(x1 - x0) > Math.abs(z1 - z0);
+  const len = along ? Math.abs(x1 - x0) : Math.abs(z1 - z0);
+  const n = Math.max(1, Math.round(len / 2.5));
+  const bands = [PAL.rustLight, PAL.orange, PAL.rust, PAL.sandDark, PAL.rockLight];
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n;
+    const cx = x0 + (x1 - x0) * t + (along ? 0 : rng.range(-0.4, 0.4));
+    const cz = z0 + (z1 - z0) * t + (along ? rng.range(-0.4, 0.4) : 0);
+    const w = len / n + rng.range(0.4, 1.4);
+    const dep = rng.range(2.2, 3.4);
+    const h = height * rng.range(0.75, 1.25);
+    let y = 0;
+    let layer = rng.int(0, bands.length);
+    while (y < h) {
+      const lh = Math.min(h - y, rng.range(0.5, 1.2));
+      const shrink = 1 - (y / Math.max(h, 1)) * 0.2;
+      batch.box((along ? w : dep) * shrink, lh, (along ? dep : w) * shrink, bands[layer % bands.length], cx, y, cz, rng.range(-0.05, 0.05));
+      y += lh;
+      layer++;
+    }
+  }
+  const half = 1.2;
+  cw.addBox(Math.min(x0, x1) - (along ? 0 : half), Math.min(z0, z1) - (along ? half : 0), Math.max(x0, x1) + (along ? 0 : half), Math.max(z0, z1) + (along ? half : 0), height, 'rock');
 }

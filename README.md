@@ -4,8 +4,8 @@ Isometric 2.5D pixel-art cowboy prototype: Vite + TypeScript + Three.js, all vis
 
 ```
 npm install
-npm run dev        # http://localhost:5173
-npm test           # horse, weapons, nav grid, interaction, NPC, inventory and pickup tests (vitest)
+npm run dev        # http://localhost:5173  (?mode=sandbox | ?mode=wave skips the menu, &wave=N starts at wave N)
+npm test           # horse, weapons, nav grid, NPCs, inventory, waves, economy, revive, map tests (vitest)
 npm run build      # typecheck + production build
 ```
 
@@ -18,8 +18,11 @@ npm run build      # typecheck + production build
 | R | Reload (from ammo in your inventory) · rotate a held item in the inventory |
 | 1 / 2 / 3 | Select weapon slot (again: holster) |
 | I | Inventory (pauses the game) · Esc / I closes |
+| B | Use a bandage (also right-click it in the inventory) |
+| Esc | Pause menu (closes an open inventory / loot / shop screen first) |
+| Enter | Wave mode: skip the break between waves |
 | H | Holster the revolver (also happens after 30 s without shooting, and on death) |
-| E | Use what you're aiming at: talk, loot a corpse, pick up an item, mount the horse · always dismounts when riding |
+| E | Use what you're aiming at: talk, trade, loot a corpse, pick up an item, mount a horse · always dismounts when riding |
 | Shift | Sprint on foot / gallop on horse |
 | P | Toggle pixelation (debug) |
 | O / L | Toggle palette quantization / outlines |
@@ -27,17 +30,19 @@ npm run build      # typecheck + production build
 
 ## Layout
 
-- `src/config.ts` – every tunable (render, camera, player, projectiles, npc, horse, targets)
-- `src/data/` – game data: `weapons.ts` (`WeaponDef`s shared by player and NPCs), `items.ts` (`ItemDef`s), `clothing.ts` (`ClothingRegistry`), `npcs.ts` (NPC definitions, default lines, name pools), `player.ts` (starting look and kit), `types.ts` (their shapes)
+- `src/config.ts` – every tunable (game title, render, camera, player, items, wave mode, projectiles, npc, horse, targets)
+- `src/core/` – `Engine` (renderer, input, pixel pass, HUD canvas, loop: lives for the whole app), `GameStateManager` (main menu → playing ⇄ paused → game over), `Session` (one playthrough: scene, player, horses, NPCs, items; disposed completely on exit), `dispose`
+- `src/modes/` – `GameMode` interface, `SandboxMode`, `WaveMode`, `WaveDirector` (wave table / formula, spawning, intermission), `Economy`, `Revive`, `Merchant`, `records` (best wave)
+- `src/ai/` – `NavGrid` (walkability grid + A*), `MountedAI` (riders circling the player; route driver for horses)
+- `src/data/` – game data: `waves.ts`, `enemies.ts`, `economy.ts`, `shop.ts` (wave mode), `weapons.ts` (`WeaponDef`s shared by player and NPCs), `items.ts` (`ItemDef`s), `clothing.ts` (`ClothingRegistry`), `npcs.ts` (NPC definitions, default lines, name pools), `player.ts` (starting look and kit), `types.ts` (their shapes)
 - `src/items/` – inventory logic, no rendering: `GridContainer`, `Equipment` (weapon + clothing slots), `transfer` (drag/drop, split, swap, pickup, take all), `ItemInstance`, `ItemDef` lookups; plus `IconRenderer` / `itemMeshes` (procedural item meshes → pixel icons)
 - `src/render/CharacterRig.ts` – shared player/NPC skeleton; builds body + clothing from an `AppearanceConfig` and rebuilds in place
-- `src/Game.ts` – fixed 60 Hz simulation + interpolated rendering, wiring, occlusion fade
 - `src/CameraRig.ts` – true iso ortho camera, pixel-grid snapping + sub-pixel upscale offset, shake
 - `src/PixelPass.ts` – low-res colour / normal+depth targets → outlines, palette, integer upscale
 - `src/entities/` – `Player`, `PlayerModel`, `Horse`, `HorseModel`, `HorseMotor` (pure movement model), `Weapon` (ammo / reload / scatter / falloff), `WeaponModel`, `Npc` (AI state machine), `NpcModel`, `NpcSystem` (provocation, witnesses, near misses), `Projectiles`, `Targets`, `Particles`, `MuzzleFlash`
 - `src/Interaction.ts` – `Interactable` interface + aim-based target picking for E
-- `src/world/` – `World` (map generation), `Colliders` (circle/AABB, grid broadphase, swept 3D segment tests), `NavGrid` (walkability grid + A* for NPCs)
-- `src/ui/` – `Hud` + `WeaponBar` (drawn at low-res on the same pixel grid), `InventoryUI` (controller), `InventoryPanel` / `LootPanel` (layouts), `CharacterPreview`, `widgets`, `DebugOverlay`, `PixelFont`
+- `src/world/` – `props` (shared ground / building / prop builders), `maps/sandbox`, `maps/waveOutpost`, `maps/menuDesert`, `Colliders` (circle/AABB, grid broadphase, swept 3D segment tests), `WorldItem`, `Tumbleweed`
+- `src/ui/` – `Hud` + `WeaponBar` + `WaveHud` (drawn at low-res on the same pixel grid), `MainMenu`, `PauseMenu`, `GameOverScreen`, `menuWidgets`, `InventoryUI` (controller), `InventoryPanel` / `LootPanel` / `ShopPanel` (layouts), `CharacterPreview`, `widgets`, `DebugOverlay`, `PixelFont`
 - `src/world/WorldItem.ts` – items dropped on the ground
 
 ## Notes
@@ -62,3 +67,14 @@ NPCs are defined in `src/data/npcs.ts`. Adding one is a data change only: give i
 - **Weapons** keep their loaded rounds on the item. Reload pulls from matching ammo stacks (smallest first); with none left the HUD says NO AMMO. NPCs reload from their own pockets and run once they're dry.
 - **Looting:** E on a corpse opens a split view (paused). Drag across or press TAKE ALL. Corpses vanish when the NPC respawns (45 s), with anything left on them.
 - **Adding an item:** add an entry to `ITEMS` in `src/data/items.ts`. Ammo stack limits live in `CONFIG.items.ammoMaxStack`. A weapon item points at a `WeaponDef` in `src/data/weapons.ts`. Clothing items are generated from `ClothingRegistry` (`src/data/clothing.ts`), so a new piece of clothing is one registry entry (any `kind` + colours). The icon and the ground mesh are generated from the item's procedural mesh.
+
+## Game modes
+
+The game opens on a title screen (live desert backdrop). **Sandbox** is the frontier town. It has two merchants: a gunsmith leaning on a porch post (guns, ammo, bandages) and a tailor by the big west building (clothes only). You start with $150 (`CONFIG.sandbox.startingDollars`) and earn more by selling to them; each buys only what they sell. Shops are data: `MERCHANT_SHOPS` in `data/shop.ts`, and any NPC with `shop: '<id>'` trades instead of talking. **Story** isn't available yet.
+
+**Wave** takes place in an abandoned outpost ringed by canyon walls:
+
+- **Waves:** outlaws (gunslingers, riflemen, shotgunners) come in through the passes in waves set by `data/waves.ts` (a formula takes over after the table). Each wave starts with a 5 s countdown, and the break after a wave lasts 25 s (Enter skips it).
+- **Merchant:** between waves, trade with the merchant at the covered wagon. Earn dollars per kill and per cleared wave, buy guns, ammo, bandages and clothes, and sell anything for half its price.
+- **Horses:** a horse arrives after wave 3. Mounted outlaws appear from wave 5; shoot the rider and the horse is yours to take for about 10 s before it bolts.
+- **Healing and death:** bandages (B) are the only way to heal. One revive per run (the star by the health bar); the second death ends the run. The best wave reached is saved and shown on the menu.

@@ -10,6 +10,7 @@ export function toonGradient(): THREE.DataTexture {
     gradient.magFilter = THREE.NearestFilter;
     gradient.generateMipmaps = false;
     gradient.needsUpdate = true;
+    gradient.userData.shared = true;
   }
   return gradient;
 }
@@ -22,6 +23,7 @@ export function toon(color: number): THREE.MeshToonMaterial {
   if (!m) {
     m = new THREE.MeshToonMaterial({ color, gradientMap: toonGradient() });
     (m as THREE.MeshToonMaterial & { flatShading: boolean }).flatShading = true;
+    m.userData.shared = true; // cached for the whole app: never disposed with a scene
     cache.set(color, m);
   }
   return m;

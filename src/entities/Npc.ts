@@ -9,9 +9,10 @@ import { GridContainer } from '../items/GridContainer';
 import { ammoItemFor, itemDef, itemForWeapon, weaponOf } from '../items/ItemDef';
 import { createItem, type ItemInstance } from '../items/ItemInstance';
 import type { Interactable } from '../Interaction';
-import { damp, dirToYaw, moveToward, yawToX, yawToZ } from '../util/math';
+import { angleDelta, damp, dirToYaw, moveToward, yawToX, yawToZ } from '../util/math';
 import { segmentVsCylinder, type CircleCollider, type CollisionWorld } from '../world/Colliders';
-import type { NavGrid } from '../world/NavGrid';
+import type { NavGrid } from '../ai/NavGrid';
+import type { Horse } from './Horse';
 import { NpcModel } from './NpcModel';
 import type { BurstKind } from './Particles';
 import type { HitInfo, Target } from './Targets';
@@ -62,6 +63,8 @@ export class Npc implements Target, Interactable {
   private states = new WeakMap<ItemInstance, WeaponState>();
   /** Set by the game: open the loot view for this corpse. */
   onLoot: (npc: Npc) => void = () => {};
+  /** Set by the mode: open this merchant's shop (NpcDef.shop). */
+  onTrade: (npc: Npc) => void = () => {};
   readonly pos = new THREE.Vector3();
   readonly prevPos = new THREE.Vector3();
   readonly vel = new THREE.Vector2();
@@ -184,7 +187,7 @@ export class Npc implements Target, Interactable {
 
   get label(): string {
     if (!this.alive) return `Loot ${this.name}${this.hasLoot ? '' : ' (empty)'}`;
-    return `Talk to ${this.name}`;
+    return this.def.shop ? `Trade with ${this.name}` : `Talk to ${this.name}`;
   }
 
   get promptHeight(): number {
@@ -206,6 +209,7 @@ export class Npc implements Target, Interactable {
     }
     this.talkLeft = CONFIG.npc.talkTime;
     this.say(this.lines.greet[this.greetIdx++ % this.lines.greet.length], CONFIG.npc.talkTime);
+    if (this.def.shop) this.onTrade(this);
   }
 
   // ---------------------------------------------------------------- Target (hitbox)
@@ -217,7 +221,9 @@ export class Npc implements Target, Interactable {
   test(a: THREE.Vector3, b: THREE.Vector3): { t: number; normal: THREE.Vector3 } | null {
     if (!this.alive) return null;
     const top = this.mode === 'hide' && this.cowering ? 1.1 : 1.85;
-    const h = segmentVsCylinder(a.x, a.y, a.z, b.x, b.y, b.z, this.pos.x, this.pos.z, 0.34, 0, top);
+    // On horseback only the rider is hit (horses can't be harmed).
+    const [y0, y1] = this.mount ? [1.0, 2.95] : [0, top];
+    const h = segmentVsCylinder(a.x, a.y, a.z, b.x, b.y, b.z, this.pos.x, this.pos.z, 0.38, y0, y1);
     return h ? { t: h.t, normal: new THREE.Vector3(h.nx, h.ny, h.nz) } : null;
   }
 
@@ -250,6 +256,13 @@ export class Npc implements Target, Interactable {
     } else if (this.mode !== 'flee' && this.mode !== 'hide') {
       this.startFleeing();
     }
+  }
+
+  /** Knocked back (the player getting up): a moment of startle, aim reset. */
+  stagger(): void {
+    this.flinch = 1;
+    this.telegraphLeft = Math.max(this.telegraphLeft, 0.8);
+    this.clearPath();
   }
 
   /** A player bullet landed close by: flinch and warn (never hostile on its own). */
@@ -288,7 +301,7 @@ export class Npc implements Target, Interactable {
   private die(): void {
     this.mode = 'dead';
     this.hp = 0;
-    this.deadLeft = CONFIG.npc.respawnTime;
+    this.deadLeft = this.def.respawns === false ? Infinity : CONFIG.npc.respawnTime;
     this.vel.set(0, 0);
     this.clearPath();
     this.speech = null;
@@ -312,6 +325,50 @@ export class Npc implements Target, Interactable {
     this.model.face(facing);
     this.collider.x = x;
     this.collider.z = z;
+    if (this.hostileByNature && this.weaponDef) {
+      // Outlaws come in with guns drawn.
+      this.mode = 'hostile';
+      this.drawTarget = 1;
+      this.telegraphLeft = this.weaponDef.ai.telegraph;
+      if (Math.random() < 0.6) this.say(pick(this.lines.hostile));
+    }
+  }
+
+  /** Outlaws are one team: their bullets pass through each other. Townsfolk can be caught in crossfire. */
+  get team(): string | undefined {
+    return this.def.attitude === 'hostile' ? 'outlaws' : undefined;
+  }
+
+  /** Wave enemies: attack on sight, never calm down, always know where the player is. */
+  get hostileByNature(): boolean {
+    return this.def.attitude === 'hostile';
+  }
+
+  // ---------------------------------------------------------------- riding
+
+  /** Horse this NPC rides (it steers via the horse's driver; the NPC aims and shoots). */
+  mount: Horse | null = null;
+
+  mountOn(h: Horse): void {
+    this.mount = h;
+    h.riderNpc = this;
+    h.model.saddle.add(this.model.root);
+    this.model.root.position.set(0, 0, 0);
+    this.pos.copy(h.pos);
+    this.prevPos.copy(h.pos);
+  }
+
+  /** Fall off (on death): the body lands beside the horse. */
+  dismount(scene: THREE.Object3D): void {
+    const h = this.mount;
+    if (!h) return;
+    this.mount = null;
+    h.riderNpc = null;
+    const side = Math.random() < 0.5 ? -1 : 1;
+    this.pos.set(h.pos.x + Math.cos(h.heading) * 1.2 * side, 0, h.pos.z - Math.sin(h.heading) * 1.2 * side);
+    this.prevPos.copy(this.pos);
+    scene.add(this.model.root);
+    this.model.face(h.heading);
   }
 
   private say(text: string, time = CONFIG.npc.speechTime): void {
@@ -338,12 +395,15 @@ export class Npc implements Target, Interactable {
     const p = ctx.player;
     const chest = playerChest(p, this.chest);
     const dist = Math.hypot(p.pos.x - this.pos.x, p.pos.z - this.pos.z);
+    if (this.mount) this.pos.copy(this.mount.pos);
     if (this.mode !== 'routine') {
-      this.sees = !p.dead && dist < CONFIG.npc.awarenessRange && this.lineOfSight(ctx, chest);
-      if (this.sees) {
+      const range = this.hostileByNature ? 60 : CONFIG.npc.awarenessRange;
+      this.sees = !p.dead && dist < range && this.lineOfSight(ctx, chest);
+      if (this.sees || (this.hostileByNature && !p.dead)) {
+        // Outlaws always know where you are; townsfolk only while they can see you.
         this.calmTimer = 0;
         this.lastSeen = p.pos.clone();
-      } else {
+      } else if (!this.hostileByNature) {
         this.calmTimer += dt;
       }
       if (this.calmTimer >= CONFIG.npc.calmTime) this.calmDown();
@@ -438,9 +498,15 @@ export class Npc implements Target, Interactable {
     this.aimPoint.z = damp(this.aimPoint.z, chest.z, 1 / (this.def.reactionTime ?? nc.reactionTime), dt);
 
     // Movement: keep the weapon's preferred distance; hunt the last known position when out of sight.
+    // (Riders don't walk: their horse's driver steers.)
     const [lo, hi] = def.ai.preferredRange;
     let speed = nc.combatSpeed;
-    if (!this.sees) {
+    const tactics = this.def.tactics ?? 'strafe';
+    if (this.mount) {
+      // nothing: the mounted AI drives the horse
+    } else if (tactics === 'cover' && this.sees && dist <= hi + 4 && this.takeCover(dt, ctx, lo, hi)) {
+      speed = nc.combatSpeed;
+    } else if (!this.sees) {
       if (this.lastSeen && this.distTo([this.lastSeen.x, this.lastSeen.z]) > 1) {
         this.repathLeft -= dt;
         if (!this.dest || this.repathLeft <= 0) this.setDest([this.lastSeen.x, this.lastSeen.z], ctx);
@@ -449,7 +515,7 @@ export class Npc implements Target, Interactable {
         this.clearPath();
       }
     } else if (dist > hi) {
-      speed = dist > hi + 6 ? nc.runSpeed : nc.combatSpeed;
+      speed = dist > hi + 6 || tactics === 'rush' ? nc.runSpeed : nc.combatSpeed;
       this.repathLeft -= dt;
       if (!this.dest || this.repathLeft <= 0) this.setDest([ctx.player.pos.x, ctx.player.pos.z], ctx);
     } else if (dist < lo) {
@@ -476,7 +542,9 @@ export class Npc implements Target, Interactable {
       }
       speed = nc.combatSpeed * 0.6;
     }
-    if (this.dest) {
+    if (this.mount) {
+      // Riding: position comes from the horse.
+    } else if (this.dest) {
       if (this.followPath(dt, speed, ctx)) this.clearPath();
     } else {
       this.halt(dt, ctx);
@@ -484,6 +552,7 @@ export class Npc implements Target, Interactable {
 
     // Look / aim.
     if (this.sees) this.lookYaw = dirToYaw(this.aimPoint.x - this.pos.x, this.aimPoint.z - this.pos.z);
+    else if (this.mount) this.lookYaw = this.mount.heading;
     else if (this.vel.lengthSq() > 0.04) this.lookYaw = this.moveYaw;
 
     // Reload when empty; re-aim briefly after reloading.
@@ -500,14 +569,16 @@ export class Npc implements Target, Interactable {
     const fx = yawToX(yaw);
     const fz = yawToZ(yaw);
     const reach = 0.4 + muzzleOffset(def.look);
-    const origin = new THREE.Vector3(this.pos.x + fx * reach + fz * 0.18, 1.38, this.pos.z + fz * reach - fx * 0.18);
+    const origin = new THREE.Vector3(this.pos.x + fx * reach + fz * 0.18, this.mount ? 2.34 : 1.38, this.pos.z + fz * reach - fx * 0.18);
     // Don't waste shots into a wall right in front.
     if (ctx.world.raycast(origin.x, origin.y, origin.z, this.aimPoint.x, this.aimPoint.y, this.aimPoint.z)) {
       this.shotDelay = 0.3;
       return;
     }
     const moving = this.vel.lengthSq() > 0.25;
-    const spreadMul = (this.def.inaccuracy ?? nc.inaccuracy) * (moving ? nc.movingSpreadMul : 1);
+    let spreadMul = (this.def.inaccuracy ?? nc.inaccuracy) * (moving ? nc.movingSpreadMul : 1);
+    // Same horseback penalty as the player.
+    if (this.mount) spreadMul = (this.def.inaccuracy ?? nc.inaccuracy) * (CONFIG.player.spreadMountedMul + this.mount.motor.speed * CONFIG.player.spreadMountedPerSpeed) * 0.5;
     const shot = weapon.fire(origin, this.aimPoint, spreadMul, yaw);
     if (shot) {
       ctx.fire(this, shot);
@@ -578,8 +649,42 @@ export class Npc implements Target, Interactable {
     return Math.hypot(x - this.pos.x, z - this.pos.z);
   }
 
+  private coverSpot: Vec2 | null = null;
+  private coverLeft = 0;
+
+  /**
+   * Riflemen: hold a spot next to cover, at their preferred range, that still sees the player.
+   * Returns false when no such spot exists (fall back to the normal band keeping).
+   */
+  private takeCover(dt: number, ctx: NpcContext, lo: number, hi: number): boolean {
+    this.coverLeft -= dt;
+    const p = ctx.player.pos;
+    if (!this.coverSpot || this.coverLeft <= 0) {
+      this.coverLeft = rand(3.5, 5.5);
+      let best: Vec2 | null = null;
+      let bestScore = Infinity;
+      for (const s of ctx.hideSpots) {
+        const dp = Math.hypot(s[0] - p.x, s[1] - p.z);
+        if (dp < lo || dp > hi) continue;
+        const dSelf = this.distTo(s);
+        if (dSelf > 14) continue;
+        if (ctx.world.raycast(s[0], CONFIG.npc.eyeHeight, s[1], p.x, CONFIG.npc.chestHeight, p.z)) continue;
+        const score = dSelf + Math.abs(dp - (lo + hi) / 2) * 0.3;
+        if (score < bestScore) {
+          bestScore = score;
+          best = s;
+        }
+      }
+      this.coverSpot = best;
+      if (best) this.setDest(best, ctx);
+    }
+    if (!this.coverSpot) return false;
+    if (this.distTo(this.coverSpot) < 0.5) this.clearPath();
+    return true;
+  }
+
   private lineOfSight(ctx: NpcContext, target: THREE.Vector3): boolean {
-    const e = CONFIG.npc.eyeHeight;
+    const e = this.mount ? 2.5 : CONFIG.npc.eyeHeight;
     return ctx.world.raycast(this.pos.x, e, this.pos.z, target.x, target.y, target.z) === null;
   }
 
@@ -658,6 +763,25 @@ export class Npc implements Target, Interactable {
   // ---------------------------------------------------------------- rendering
 
   sync(alpha: number, frameDt: number): void {
+    if (this.mount) {
+      // Sitting in the saddle: yaws are relative to the horse.
+      const hy = this.mount.renderYawValue;
+      this.model.animate(frameDt, {
+        speed: 0,
+        moveYaw: 0,
+        lookYaw: angleDelta(hy, this.lookYaw),
+        draw: this.draw,
+        recoil: this.recoil,
+        reload: this.weapon?.reloadProgress ?? -1,
+        lean: false,
+        talking: false,
+        flinch: this.flinch,
+        cower: false,
+        dead: false,
+        mounted: true,
+      });
+      return;
+    }
     this.model.root.position.lerpVectors(this.prevPos, this.pos, alpha);
     const r = this.def.routine;
     const atPost = (r.kind === 'lean' || r.kind === 'idle') && this.mode === 'routine' && this.distTo(r.at) <= 0.4;
@@ -673,6 +797,7 @@ export class Npc implements Target, Interactable {
       flinch: this.flinch,
       cower: this.mode === 'hide' && this.cowering,
       dead: this.mode === 'dead',
+      mounted: false,
     });
   }
 }

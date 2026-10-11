@@ -32,6 +32,14 @@ export function buildItemMesh(def: ItemDef): THREE.Object3D {
     out.add(rig.root);
     return out;
   }
+  if (def.category === 'consumable') {
+    // Bandage roll with a red cross.
+    part(new THREE.CylinderGeometry(0.2, 0.2, 0.22, 10), PAL.cream, 0, 0.2, 0, out).rotation.z = Math.PI / 2;
+    const red = def.icon?.tint ?? PAL.red;
+    part(boxGeo(0.05, 0.18, 0.03), red, 0, 0.2, 0.2, out);
+    part(boxGeo(0.18, 0.05, 0.03), red, 0, 0.2, 0.2, out);
+    return out;
+  }
   // Ammo box: card box with a coloured band and a few cartridges on top.
   const tint = def.icon?.tint ?? PAL.red;
   part(boxGeo(0.5, 0.28, 0.34, -1), PAL.sandLight, 0, 0, 0, out);

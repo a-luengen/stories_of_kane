@@ -2,6 +2,13 @@
 const DEG = Math.PI / 180;
 
 export const CONFIG = {
+  game: {
+    /** Title on the main menu (placeholder). */
+    title: 'DUST & LEAD',
+    /** localStorage key for the best wave reached. */
+    bestWaveKey: 'dust-and-lead.bestWave',
+  },
+
   sim: {
     fixedDt: 1 / 60,
     maxStepsPerFrame: 5,
@@ -88,6 +95,32 @@ export const CONFIG = {
     npcGrid: { w: 8, h: 4 },
     /** Holster + draw when switching weapon slots (s, total). */
     weaponSwapTime: 0.4,
+  },
+
+  sandbox: {
+    /** Dollars in your pocket at the start (earn more by selling to the merchants). */
+    startingDollars: 150,
+  },
+
+  wave: {
+    /** The player's horse arrives at the start of the break after this wave. */
+    horseUnlockWave: 3,
+    mountedEnemiesFromWave: 5,
+    countdown: 5,
+    intermission: 25,
+    /** "Wave cleared" banner time at the start of the break. */
+    clearedBanner: 3,
+    /** Seconds between enemy spawns. */
+    spawnInterval: [1, 2] as [number, number],
+    /** Corpses older than this many waves are removed at the start of a break. */
+    corpseWaves: 2,
+    /** Riderless horses wait this long before bolting off the map. */
+    riderlessStay: 10,
+    /** Spawn points closer than this to the player (or on screen) are avoided. */
+    minSpawnDistance: 18,
+    revive: { tokens: 1, slowMo: 0.3, slowMoTime: 1, getUpAfter: 2, hp: 0.5, knockbackRadius: 5, knockback: 3, invulnerable: 2 },
+    /** Mounted enemies circle the player at about this distance. */
+    orbitRadius: 9,
   },
 
   projectiles: {

@@ -22,6 +22,8 @@ export interface NpcPose {
   flinch: number;
   cower: boolean;
   dead: boolean;
+  /** Sitting in a saddle (yaws are relative to the horse). */
+  mounted: boolean;
 }
 
 /**
@@ -84,7 +86,7 @@ export class NpcModel {
       legYaw = p.moveYaw + Math.PI; // backpedal while aiming
     }
     if (p.lean || p.cower) legYaw = this.hipsYaw;
-    this.hipsYaw = dampAngle(this.hipsYaw, legYaw, 10, dt);
+    this.hipsYaw = p.mounted ? 0 : dampAngle(this.hipsYaw, legYaw, 10, dt);
     const maxTwist = aiming ? Math.PI : 1.1;
     const want = this.hipsYaw + clamp(angleDelta(this.hipsYaw, p.lookYaw), -maxTwist, maxTwist);
     this.upperYaw = dampAngle(this.upperYaw, want, aiming ? 18 : 6, dt);
@@ -109,8 +111,14 @@ export class NpcModel {
     }
     legLx = lerp(legLx, -1.45, this.crouch);
     legRx = lerp(legRx, -1.45, this.crouch);
-    legL.rotation.set(damp(legL.rotation.x, legLx, 16, dt), 0, 0);
-    legR.rotation.set(damp(legR.rotation.x, legRx, 16, dt), 0, damp(legR.rotation.z, legRz, 10, dt));
+    if (p.mounted) {
+      // Straddle: thighs forward/outward, boots down along the flanks.
+      legL.rotation.set(-0.45, 0, -0.42);
+      legR.rotation.set(-0.45, 0, 0.42);
+    } else {
+      legL.rotation.set(damp(legL.rotation.x, legLx, 16, dt), 0, 0);
+      legR.rotation.set(damp(legR.rotation.x, legRx, 16, dt), 0, damp(legR.rotation.z, legRz, 10, dt));
+    }
     if (this.rig.skirt) this.rig.skirt.rotation.x = swing * 0.12;
 
     const targetBob = moving ? Math.abs(Math.cos(this.phase * stride)) * 0.06 * amp : Math.sin(this.time * 2) * 0.01;

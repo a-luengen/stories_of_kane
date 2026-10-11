@@ -11,7 +11,7 @@ const GLYPHS: Record<string, string> = {
   '4': '101101111001001', '5': '111100110001110', '6': '011100111101111', '7': '111001010010010',
   '8': '111101111101111', '9': '111101111001110',
   ' ': '000000000000000', '.': '000000000000010', ':': '000010000010000', '-': '000000111000000',
-  '|': '010010010010010', '(': '010100100100010', ')': '010001001001010', '+': '000010111010000', '%': '101001010100101',
+  '<': '001010100010001', '>': '100010001010100', '&': '010100010101011', '$': '011110010011110', '|': '010010010010010', '(': '010100100100010', ')': '010001001001010', '+': '000010111010000', '%': '101001010100101',
   ',': '000000000010100', '?': '110001010000010', "'": '010010000000000',
   '[': '110100100100110', ']': '011001001001011', '/': '001001010100100', '!': '010010010000010',
 };
@@ -33,4 +33,31 @@ export function drawText(ctx: CanvasRenderingContext2D, text: string, x: number,
     }
     cx += 4;
   }
+}
+
+/** Text drawn with each font pixel as a `scale`×`scale` block (titles, banners). */
+export function drawTextScaled(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  color: string,
+  scale: number,
+  shadow?: string,
+): void {
+  if (shadow) drawTextScaled(ctx, text, x + scale, y + scale, shadow, scale);
+  ctx.fillStyle = color;
+  let cx = Math.round(x);
+  const cy = Math.round(y);
+  for (const ch of text.toUpperCase()) {
+    const g = GLYPHS[ch] ?? GLYPHS[' '];
+    for (let i = 0; i < 15; i++) {
+      if (g[i] === '1') ctx.fillRect(cx + (i % 3) * scale, cy + Math.floor(i / 3) * scale, scale, scale);
+    }
+    cx += 4 * scale;
+  }
+}
+
+export function textWidthScaled(text: string, scale: number): number {
+  return (text.length * 4 - 1) * scale;
 }

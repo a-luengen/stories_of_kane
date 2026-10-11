@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config';
+import { disposeObject } from '../core/dispose';
 import type { AppearanceConfig, WeaponDef } from '../data/types';
 import { CharacterRig } from '../render/CharacterRig';
 import { pixelsToOutlinedCanvas } from '../render/pixelCanvas';
@@ -39,6 +40,11 @@ export class CharacterPreview {
     // Relaxed pose: arms a little away from the body so sleeves read.
     this.rig.armL.rotation.z = -0.18;
     this.rig.armR.rotation.z = 0.18;
+  }
+
+  dispose(): void {
+    this.target.dispose();
+    disposeObject(this.scene);
   }
 
   /** Rebuild when the equipment changed (`version` is the equipment version). */

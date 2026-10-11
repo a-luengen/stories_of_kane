@@ -27,9 +27,13 @@ export interface HudState {
   menuOpen: boolean;
   hp: number;
   maxHp: number;
+  /** 0..1 while bandaging, else -1. */
+  healProgress: number;
   /** 0..1 damage flash. */
   hurt: number;
   dead: boolean;
+  /** Shown while dead. */
+  deathMessage: string;
   labels: WorldLabel[];
   prompt: string | null;
   /** Crosshair position in low-res pixels (or null when the cursor is outside). */
@@ -62,6 +66,12 @@ export class Hud {
     this.ctx.imageSmoothingEnabled = false;
   }
 
+  /** Clear the canvas and return its context (menus that skip the gameplay HUD). */
+  clear(): CanvasRenderingContext2D {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    return this.ctx;
+  }
+
   /** The 2D context, for panels drawn on the same pixel grid after the HUD. */
   get context(): CanvasRenderingContext2D {
     return this.ctx;
@@ -88,7 +98,7 @@ export class Hud {
     if (s.dead) {
       ctx.fillStyle = 'rgba(31,21,16,0.45)';
       ctx.fillRect(0, 0, W, H);
-      const msg = 'YOU DIED';
+      const msg = s.deathMessage;
       drawText(ctx, msg, Math.round(W / 2 - textWidth(msg) / 2), Math.round(H * 0.42), C.red, C.ink);
     }
 
@@ -101,6 +111,13 @@ export class Hud {
     ctx.fillRect(15, 5, hw + 2, 5);
     ctx.fillStyle = s.hp / s.maxHp < 0.3 && Math.floor(this.time * 4) % 2 ? C.cream : C.red;
     ctx.fillRect(16, 6, Math.ceil((hw * s.hp) / s.maxHp), 3);
+    if (s.healProgress >= 0) {
+      drawText(ctx, 'BANDAGING', 5, 14, C.cream, C.ink);
+      ctx.fillStyle = C.ink;
+      ctx.fillRect(41, 15, 22, 3);
+      ctx.fillStyle = '#8a9e52';
+      ctx.fillRect(42, 16, Math.round(20 * s.healProgress), 1);
+    }
 
     // Weapon bar + ammo bottom-left.
     const barY = H - SLOT_H - 4;

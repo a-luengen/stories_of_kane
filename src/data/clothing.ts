@@ -13,18 +13,25 @@ const defs: ClothingDef[] = [
   { id: 'shirt_cream', name: 'Cream Shirt', description: 'Plain cotton work shirt.', slot: 'top', kind: 'shirt', color: PAL.cream },
   { id: 'shirt_rust', name: 'Rust Shirt', description: 'Faded red flannel.', slot: 'top', kind: 'shirt', color: PAL.rustLight },
   { id: 'shirt_denim', name: 'Denim Shirt', description: 'Heavy blue work shirt.', slot: 'top', kind: 'shirt', color: PAL.denim },
+  { id: 'shirt_grey', name: 'Grey Shirt', description: 'Faded charcoal cotton.', slot: 'top', kind: 'shirt', color: 0x3b3532 },
   { id: 'poncho_rust', name: 'Poncho', description: 'Woven wool with a cream stripe.', slot: 'outerwear', kind: 'poncho', color: PAL.rustLight, trim: PAL.cream },
   { id: 'vest_brown', name: 'Leather Vest', description: 'Brown leather, open front.', slot: 'outerwear', kind: 'vest', color: PAL.brown },
   { id: 'duster_sand', name: 'Duster', description: 'Long canvas riding coat.', slot: 'outerwear', kind: 'duster', color: PAL.sandDark },
+  { id: 'duster_dark', name: 'Dark Duster', description: 'Dust-stained, blood-stained. Outlaw issue.', slot: 'outerwear', kind: 'duster', color: PAL.darkBrown },
+  { id: 'duster_black', name: 'Black Duster', description: 'Black oilcloth riding coat.', slot: 'outerwear', kind: 'duster', color: PAL.ink },
 
   // Legs and full body.
   { id: 'trousers_denim', name: 'Denim Trousers', description: 'Riveted work trousers.', slot: 'legs', kind: 'trousers', color: PAL.denim },
   { id: 'trousers_brown', name: 'Brown Trousers', description: 'Wool trousers.', slot: 'legs', kind: 'trousers', color: PAL.brown },
   { id: 'chaps_wood', name: 'Chaps', description: 'Fringed leather chaps over canvas trousers.', slot: 'legs', kind: 'chaps', color: PAL.wood, trim: PAL.sandDark },
+  { id: 'chaps_dark', name: 'Dark Chaps', description: 'Black leather chaps over dark trousers.', slot: 'legs', kind: 'chaps', color: PAL.darkBrown, trim: 0x3b3532 },
   { id: 'dress_blue', name: 'Blue Dress', description: 'Long prairie dress with cream trim.', slot: 'fullBody', kind: 'dress', color: PAL.skyDeep, trim: PAL.cream },
+  { id: 'dress_red', name: 'Red Dress', description: 'Burgundy town dress with lace cuffs.', slot: 'fullBody', kind: 'dress', color: PAL.redDark, trim: PAL.cream },
 
   // Accessories.
   { id: 'bandana_red', name: 'Red Bandana', description: 'Keeps the dust out.', slot: 'neck', kind: 'bandana', color: PAL.red },
+  { id: 'bandana_black', name: 'Black Bandana', description: 'Favoured by men with a price on their head.', slot: 'neck', kind: 'bandana', color: PAL.ink },
+  { id: 'bandana_rust', name: 'Rust Bandana', description: 'Sun-bleached red.', slot: 'neck', kind: 'bandana', color: PAL.rust },
   { id: 'boots_brown', name: 'Brown Boots', description: 'Riding boots.', slot: 'boots', kind: 'boots', color: PAL.darkBrown },
   { id: 'boots_black', name: 'Black Boots', description: 'Polished, mostly.', slot: 'boots', kind: 'boots', color: PAL.ink },
   { id: 'belt_leather', name: 'Leather Belt', description: 'Brass buckle.', slot: 'belt', kind: 'belt', color: PAL.darkBrown, trim: PAL.brass },

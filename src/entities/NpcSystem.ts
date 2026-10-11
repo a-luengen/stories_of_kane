@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { CONFIG } from '../config';
 import type { NpcDef, Vec2 } from '../data/types';
 import type { CircleCollider, CollisionWorld } from '../world/Colliders';
-import type { NavGrid } from '../world/NavGrid';
+import type { NavGrid } from '../ai/NavGrid';
+import { disposeObject } from '../core/dispose';
 import { Npc, playerChest, type NpcContext, type PlayerView } from './Npc';
 import type { ShotRequest } from './Weapon';
 
@@ -34,9 +35,26 @@ export class NpcSystem {
     this.hideSpots = coverSpots(buildings, nav);
   }
 
-  /** Circles of the living NPCs, for the player / horse to collide with. */
+  /** Circles of the living NPCs on foot, for the player / horses to collide with (riders ride). */
   get bodies(): readonly CircleCollider[] {
-    return this.npcs.filter((n) => n.alive).map((n) => n.collider);
+    return this.npcs.filter((n) => n.alive && !n.mount).map((n) => n.collider);
+  }
+
+  /** Spawn an NPC at runtime (wave enemies). */
+  add(def: NpcDef): Npc {
+    const n = new Npc(def);
+    this.npcs.push(n);
+    this.group.add(n.model.root);
+    return n;
+  }
+
+  /** Remove an NPC for good (despawned corpse) and free its model. */
+  remove(n: Npc): void {
+    const i = this.npcs.indexOf(n);
+    if (i < 0) return;
+    this.npcs.splice(i, 1);
+    n.model.root.removeFromParent();
+    disposeObject(n.model.root);
   }
 
   update(dt: number, player: PlayerView, extra: readonly CircleCollider[], fire: (npc: Npc, shot: ShotRequest) => void): void {

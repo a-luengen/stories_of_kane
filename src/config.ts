@@ -61,23 +61,58 @@ export const CONFIG = {
     acceleration: 38,
     deceleration: 30,
     mountRange: 2.6,
+    maxHp: 100,
+    /** Health regenerates after this long without taking damage (s)... */
+    regenDelay: 5,
+    /** ...at this rate (hp/s). */
+    regenRate: 8,
+    /** Seconds from death to respawn. */
+    respawnTime: 3.5,
+    /** The gun goes back in the holster after this long without shooting (s). */
+    autoHolsterTime: 30,
+    /** Weapon spread multipliers (the weapon's own spread is the standing-still value). */
+    spreadMovingMul: 2.75,
+    spreadMountedMul: 4.5,
+    /** Extra spread multiplier per unit of horse speed. */
+    spreadMountedPerSpeed: 0.225,
   },
 
-  revolver: {
-    magazine: 6,
-    fireCooldown: 0.3,
-    reloadTime: 1.5,
-    bulletSpeed: 72,
-    bulletRange: 46,
-    /** Base spread angles; the scatter radius at distance d is d·tan(spread)·(1 + d·spreadGrowth). */
-    spreadStanding: 0.8 * DEG,
-    spreadMoving: 2.2 * DEG,
-    spreadMounted: 3.6 * DEG,
-    /** Extra spread per unit of horse speed (radians). */
-    spreadMountedPerSpeed: 0.18 * DEG,
-    /** How fast inaccuracy compounds with distance (per world unit). 0 = purely angular spread. */
-    spreadGrowth: 0.1,
+  projectiles: {
     tracerLength: 1.6,
+  },
+
+  npc: {
+    radius: 0.35,
+    hp: 100,
+    walkSpeed: 1.5,
+    combatSpeed: 2.6,
+    runSpeed: 4.8,
+    /** Default weapon spread multiplier in NPC hands (see NpcDef.inaccuracy). */
+    inaccuracy: 2.5,
+    /** Default aim lag (s) behind a moving target (see NpcDef.reactionTime). */
+    reactionTime: 0.3,
+    /** Spread multiplier while the NPC moves. */
+    movingSpreadMul: 1.6,
+    talkRange: 2.8,
+    /** Within this range an idle NPC stops and turns to face the player. */
+    noticeRange: 4.5,
+    /** Player bullets landing within this radius of an NPC make it flinch and warn. */
+    nearMissRadius: 3,
+    /** Seconds before the same NPC warns again. */
+    warnCooldown: 2.5,
+    /** Max distance from the victim at which a defender can witness a shooting. */
+    witnessRange: 12,
+    /** The player counts as "around" while within this range and in line of sight. */
+    awarenessRange: 24,
+    /** Seconds the player must stay away (out of range or out of sight) for an NPC to calm down. */
+    calmTime: 60,
+    /** Unarmed NPCs bolt again if the player comes this close to their hiding spot (in sight). */
+    hideBreakRange: 8,
+    respawnTime: 45,
+    eyeHeight: 1.55,
+    chestHeight: 1.2,
+    speechTime: 3.2,
+    talkTime: 4,
   },
 
   horse: {

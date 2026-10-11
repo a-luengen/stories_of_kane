@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PAL } from '../render/palette';
 
-export type BurstKind = 'dust' | 'spark' | 'wood' | 'glass' | 'straw' | 'rock' | 'cactus' | 'hoof';
+export type BurstKind = 'dust' | 'spark' | 'wood' | 'glass' | 'straw' | 'rock' | 'cactus' | 'hoof' | 'blood';
 
 interface BurstStyle {
   colors: number[];
@@ -22,6 +22,7 @@ const STYLES: Record<BurstKind, BurstStyle> = {
   straw: { colors: [PAL.sandPale, PAL.sandLight, PAL.brassLight], count: [7, 11], speed: [1.5, 3.5], up: 2.5, life: [0.4, 0.9], size: [0.06, 0.11], gravity: -10, drag: 2 },
   rock: { colors: [PAL.rockLight, PAL.rock, PAL.sandLight], count: [5, 8], speed: [1.5, 3.5], up: 2.5, life: [0.3, 0.6], size: [0.06, 0.12], gravity: -16, drag: 1.5 },
   cactus: { colors: [PAL.cactusLight, PAL.cactus, PAL.sandPale], count: [5, 8], speed: [1, 3], up: 2, life: [0.3, 0.6], size: [0.06, 0.1], gravity: -14, drag: 2 },
+  blood: { colors: [PAL.red, PAL.redDark, PAL.rust], count: [6, 9], speed: [1, 3], up: 1.5, life: [0.3, 0.6], size: [0.06, 0.11], gravity: -14, drag: 1.5 },
   hoof: { colors: [PAL.sandLight, PAL.sand, PAL.sandDark], count: [2, 3], speed: [0.4, 1.4], up: 1.2, life: [0.3, 0.55], size: [0.12, 0.22], gravity: -1.5, drag: 3 },
 };
 

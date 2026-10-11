@@ -1,4 +1,3 @@
-import { CONFIG } from '../config';
 import { drawText, textWidth } from './PixelFont';
 
 const C = {
@@ -11,8 +10,23 @@ const C = {
   red: '#a33a2a',
 };
 
+/** Text anchored to a point in the world, already projected to low-res pixels. */
+export interface WorldLabel {
+  kind: 'name' | 'prompt' | 'speech' | 'alert';
+  text: string;
+  x: number;
+  y: number;
+}
+
 export interface HudState {
   ammo: number;
+  magazine: number;
+  hp: number;
+  maxHp: number;
+  /** 0..1 damage flash. */
+  hurt: number;
+  dead: boolean;
+  labels: WorldLabel[];
   reloadProgress: number; // -1 when not reloading
   prompt: string | null;
   /** Crosshair position in low-res pixels (or null when the cursor is outside). */
@@ -52,8 +66,36 @@ export class Hud {
     const H = this.canvas.height;
     ctx.clearRect(0, 0, W, H);
 
-    // Ammo: six bullet icons bottom-left.
-    const mag = CONFIG.revolver.magazine;
+    for (const l of s.labels) this.label(l, W, H);
+
+    // Damage flash: red frame, plus a dark veil once dead.
+    if (s.hurt > 0.01) {
+      ctx.fillStyle = `rgba(163,58,42,${(s.hurt * 0.55).toFixed(3)})`;
+      const t = 4;
+      ctx.fillRect(0, 0, W, t);
+      ctx.fillRect(0, H - t, W, t);
+      ctx.fillRect(0, t, t, H - 2 * t);
+      ctx.fillRect(W - t, t, t, H - 2 * t);
+    }
+    if (s.dead) {
+      ctx.fillStyle = 'rgba(31,21,16,0.45)';
+      ctx.fillRect(0, 0, W, H);
+      const msg = 'YOU DIED';
+      drawText(ctx, msg, Math.round(W / 2 - textWidth(msg) / 2), Math.round(H * 0.42), C.red, C.ink);
+    }
+
+    // Health bar top-left.
+    const hw = 40;
+    ctx.fillStyle = 'rgba(31,21,16,0.55)';
+    ctx.fillRect(3, 3, hw + 17, 9);
+    drawText(ctx, 'HP', 5, 5, C.cream, C.ink);
+    ctx.fillStyle = C.ink;
+    ctx.fillRect(15, 5, hw + 2, 5);
+    ctx.fillStyle = s.hp / s.maxHp < 0.3 && Math.floor(this.time * 4) % 2 ? C.cream : C.red;
+    ctx.fillRect(16, 6, Math.ceil((hw * s.hp) / s.maxHp), 3);
+
+    // Ammo: bullet icons bottom-left.
+    const mag = s.magazine;
     const bx = 6;
     const by = H - 15;
     const reloading = s.reloadProgress >= 0;
@@ -89,6 +131,46 @@ export class Hud {
     if (!s.pixelate) drawText(ctx, 'PIXEL OFF [P]', W - textWidth('PIXEL OFF [P]') - 4, 4, C.cream, C.ink);
 
     if (s.cursorX !== null && s.cursorY !== null) this.crosshair(s.cursorX, s.cursorY, reloading);
+  }
+
+  private label(l: WorldLabel, W: number, H: number): void {
+    const ctx = this.ctx;
+    if (l.kind === 'alert') {
+      drawText(ctx, '!', Math.round(l.x - 1), Math.round(l.y - 5), C.red, C.ink);
+      return;
+    }
+    if (l.kind === 'speech') {
+      const lines = wrap(l.text.toUpperCase(), 24);
+      const tw = Math.max(...lines.map(textWidth));
+      const bw = tw + 6;
+      const bh = lines.length * 7 + 3;
+      const x = clampInt(Math.round(l.x - bw / 2), 1, W - bw - 1);
+      const y = clampInt(Math.round(l.y - bh - 3), 1, H - bh - 4);
+      ctx.fillStyle = C.ink;
+      ctx.fillRect(x - 1, y - 1, bw + 2, bh + 2);
+      ctx.fillStyle = C.cream;
+      ctx.fillRect(x, y, bw, bh);
+      // Tail towards the speaker.
+      const tx = clampInt(Math.round(l.x), x + 2, x + bw - 3);
+      ctx.fillStyle = C.ink;
+      ctx.fillRect(tx - 2, y + bh, 5, 2);
+      ctx.fillRect(tx - 1, y + bh + 2, 3, 1);
+      ctx.fillStyle = C.cream;
+      ctx.fillRect(tx - 1, y + bh, 3, 1);
+      ctx.fillRect(tx, y + bh + 1, 1, 1);
+      lines.forEach((line, i) => drawText(ctx, line, x + 3 + Math.round((tw - textWidth(line)) / 2), y + 2 + i * 7, C.ink));
+      return;
+    }
+    const tw = textWidth(l.text);
+    const x = clampInt(Math.round(l.x - tw / 2), 2, W - tw - 2);
+    const y = clampInt(Math.round(l.y - 5), 2, H - 8);
+    if (l.kind === 'prompt') {
+      ctx.fillStyle = 'rgba(31,21,16,0.7)';
+      ctx.fillRect(x - 3, y - 2, tw + 6, 9);
+      drawText(ctx, l.text, x, y, C.brassLight);
+    } else {
+      drawText(ctx, l.text, x, y, C.cream, C.ink);
+    }
   }
 
   private bullet(x: number, y: number, full: boolean, next: boolean): void {
@@ -127,4 +209,24 @@ export class Hud {
     ctx.fillStyle = C.red;
     ctx.fillRect(cx, cy, 1, 1);
   }
+}
+
+function clampInt(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+/** Greedy word wrap. */
+function wrap(text: string, max: number): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const word of text.split(' ')) {
+    if (line && line.length + 1 + word.length > max) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
 }

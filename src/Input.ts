@@ -10,7 +10,7 @@ export class Input {
 
   constructor(target: HTMLElement) {
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
+      if (e.code === 'Tab' || e.code === 'Space' || e.code === 'F3') e.preventDefault();
       if (!e.repeat) this.pressed.add(e.code);
       this.down.add(e.code);
     });

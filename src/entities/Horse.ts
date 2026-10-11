@@ -1,11 +1,19 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config';
-import type { CollisionWorld } from '../world/Colliders';
+import type { Interactable } from '../Interaction';
+import type { CircleCollider, CollisionWorld } from '../world/Colliders';
 import { HorseModel } from './HorseModel';
 import { HorseMotor } from './HorseMotor';
 import { lerpAngle } from '../util/math';
 
-export class Horse {
+export class Horse implements Interactable {
+  readonly label = 'Mount horse';
+  readonly range = CONFIG.player.mountRange;
+  readonly priority = 0;
+  readonly promptHeight = 2.6;
+  /** Set by the game: whether mounting is possible right now, and what mounting does. */
+  canMount: () => boolean = () => !this.ridden;
+  onMount: () => void = () => {};
   readonly motor = new HorseMotor(CONFIG.horse);
   readonly model = new HorseModel();
   readonly pos = new THREE.Vector3();
@@ -16,6 +24,18 @@ export class Horse {
   private renderYaw = 0;
   /** Last collision contact this step (for debug). */
   lastContact = false;
+
+  get position(): THREE.Vector3 {
+    return this.pos;
+  }
+
+  canInteract(): boolean {
+    return this.canMount();
+  }
+
+  interact(): void {
+    this.onMount();
+  }
 
   get heading(): number {
     return this.motor.heading;
@@ -29,7 +49,7 @@ export class Horse {
   }
 
   /** @param target desired heading or null */
-  update(dt: number, target: number | null, gallop: boolean, world: CollisionWorld): void {
+  update(dt: number, target: number | null, gallop: boolean, world: CollisionWorld, dynamic?: readonly CircleCollider[]): void {
     this.prevPos.copy(this.pos);
     this.prevHeading = this.motor.heading;
     this.motor.update(target, gallop, dt);
@@ -38,7 +58,7 @@ export class Horse {
     this.pos.x += Math.sin(m.heading) * m.speed * dt;
     this.pos.z += Math.cos(m.heading) * m.speed * dt;
     const p = { x: this.pos.x, z: this.pos.z };
-    const c = world.resolveCircle(p, CONFIG.horse.radius);
+    const c = world.resolveCircle(p, CONFIG.horse.radius, dynamic);
     this.pos.x = p.x;
     this.pos.z = p.z;
     this.lastContact = c.hit;

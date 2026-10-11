@@ -9,9 +9,15 @@ import { ProjectileSystem, type Impact } from './entities/Projectiles';
 import { Particles, type BurstKind } from './entities/Particles';
 import { MuzzleFlash } from './entities/MuzzleFlash';
 import { TargetSystem } from './entities/Targets';
+import { Npc } from './entities/Npc';
+import { NpcSystem } from './entities/NpcSystem';
+import type { ShotRequest } from './entities/Weapon';
+import { NPCS } from './data/npcs';
+import { pickInteractable, type Interactable } from './Interaction';
 import { buildWorld, type Occluder } from './world/World';
 import { segmentVsBox, type CircleCollider, type CollisionWorld, type Surface } from './world/Colliders';
-import { Hud } from './ui/Hud';
+import { NavGrid } from './world/NavGrid';
+import { Hud, type WorldLabel } from './ui/Hud';
 import { DebugOverlay } from './ui/DebugOverlay';
 import { damp, dirToYaw } from './util/math';
 
@@ -36,7 +42,17 @@ export class Game {
   readonly projectiles = new ProjectileSystem();
   readonly particles = new Particles();
   readonly flash = new MuzzleFlash();
+  /** Separate flash for NPC shots so they don't steal the player's. */
+  readonly npcFlash = new MuzzleFlash();
   readonly targets = new TargetSystem();
+  readonly nav: NavGrid;
+  readonly npcs: NpcSystem;
+  private interactables: Interactable[];
+  /** What E would use right now (on foot). */
+  private interactTarget: Interactable | null = null;
+  private playerCollider: CircleCollider;
+  private playerSpawn: THREE.Vector3;
+  private respawnLeft = 0;
   private hud: Hud;
   private debug: DebugOverlay;
 
@@ -92,8 +108,12 @@ export class Game {
     this.world = wd.collision;
     this.occluders = wd.occluders;
     this.scene.add(wd.group, this.targets.group, this.projectiles.group, this.particles.mesh, this.flash.group, this.flash.light);
-    this.pixelPass.unoutlined.push(this.projectiles.group, this.flash.group, this.particles.mesh);
+    this.scene.add(this.npcFlash.group, this.npcFlash.light);
+    this.pixelPass.unoutlined.push(this.projectiles.group, this.flash.group, this.npcFlash.group, this.particles.mesh);
+    this.playerSpawn = wd.playerSpawn.clone();
     this.player.setPosition(wd.playerSpawn);
+    this.playerCollider = { kind: 'circle', x: 0, z: 0, r: CONFIG.player.radius, height: 1.9, surface: 'wood', blocksBullets: false };
+    this.targets.addActor(this.player);
     this.scene.add(this.player.model.root);
     this.horse.place(wd.horseSpawn, wd.horseYaw);
     this.scene.add(this.horse.model.root);
@@ -103,6 +123,15 @@ export class Game {
       const back = new THREE.Vector3(-Math.sin(h.rotation.y) * 0.7, 0.05, -Math.cos(h.rotation.y) * 0.7);
       this.particles.burst('hoof', back.add(h.position));
     };
+    this.horse.canMount = () => !this.player.mounted && !this.player.dead;
+    this.horse.onMount = () => this.mount();
+
+    // NPCs walk a nav grid over the static colliders and hide behind the buildings.
+    this.nav = new NavGrid(this.world, CONFIG.world.size / 2);
+    this.npcs = new NpcSystem(NPCS, this.world, this.nav, this.occluders);
+    this.scene.add(this.npcs.group);
+    for (const n of this.npcs.npcs) this.targets.addActor(n);
+    this.interactables = [this.horse, ...this.npcs.npcs];
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
@@ -158,7 +187,7 @@ export class Game {
     if (i.consume('KeyP')) this.pixelate = !this.pixelate;
     if (i.consume('KeyO')) this.pixelPass.quantize = !this.pixelPass.quantize;
     if (i.consume('KeyL')) this.pixelPass.outlines = !this.pixelPass.outlines;
-    if (i.consume('KeyH')) this.debug.visible = !this.debug.visible;
+    if (i.consume('F3')) this.debug.visible = !this.debug.visible;
   }
 
   // ------------------------------------------------------------------------------ simulation
@@ -178,45 +207,58 @@ export class Game {
       mz /= ml;
     }
 
-    if (input.consume('KeyE')) this.toggleMount();
+    const p = this.player;
+    p.update(dt);
+    this.interactTarget = p.mounted || p.dead ? null : pickInteractable(this.interactables, p.pos, p.aimYaw);
+    if (input.consume('KeyE') && !p.dead) {
+      // Context-sensitive: riding always dismounts, on foot use whatever is targeted.
+      if (p.mounted) this.dismount();
+      else this.interactTarget?.interact();
+    }
 
     const pin: PlayerInput = {
       moveX: mx,
       moveZ: mz,
       sprint: input.sprint,
-      fireHeld: input.mouseDown,
-      reload: input.consume('KeyR'),
+      fireHeld: input.mouseDown && !p.dead,
+      reload: input.consume('KeyR') && !p.dead,
+      holster: input.consume('KeyH'),
       aim: this.aim,
     };
 
-    if (this.player.mounted) {
+    const npcBodies = this.npcs.bodies;
+    if (p.mounted) {
       const target = ml > 1e-6 ? dirToYaw(mx, mz) : null;
-      this.horse.update(dt, target, input.sprint, this.world);
-      this.player.prevPos.copy(this.player.pos);
-      this.player.pos.copy(this.horse.pos);
-      this.player.mountSpeed = this.horse.motor.speed;
-      this.player.mountYaw = this.horse.heading;
+      this.horse.update(dt, target, input.sprint, this.world, npcBodies);
+      p.prevPos.copy(p.pos);
+      p.pos.copy(this.horse.pos);
+      p.mountSpeed = this.horse.motor.speed;
+      p.mountYaw = this.horse.heading;
     } else {
-      this.horse.update(dt, null, false, this.world);
-      this.horseCollider.x = this.horse.pos.x;
-      this.horseCollider.z = this.horse.pos.z;
-      this.player.updateMovement(dt, pin, this.world, [this.horseCollider]);
+      this.horse.update(dt, null, false, this.world, npcBodies);
+      p.updateMovement(dt, pin, this.world, [this.horseCollider, ...npcBodies]);
       this.spawnFootsteps(dt);
     }
+    this.horseCollider.x = this.horse.pos.x;
+    this.horseCollider.z = this.horse.pos.z;
+    this.playerCollider.x = p.pos.x;
+    this.playerCollider.z = p.pos.z;
 
-    const shot = this.player.updateWeapon(dt, pin);
+    const shot = p.updateWeapon(dt, pin);
     if (shot) {
-      this.projectiles.fire(shot.origin, shot.dir);
-      this.flash.trigger(shot.origin, shot.dir);
+      this.fireShot(shot, p, this.flash);
       this.rig.addTrauma(CONFIG.shake.shotTrauma);
-      // A wisp of smoke at the muzzle.
-      this.particles.spawn(shot.origin.x, shot.origin.y, shot.origin.z, shot.dir.x * 1.5, 0.6, shot.dir.z * 1.5, 0.35, 0.16, 0.5, 3, 0xe8cf9b);
     }
 
+    const others = p.mounted || p.dead ? [this.horseCollider] : [this.horseCollider, this.playerCollider];
+    this.npcs.update(dt, p, others, (npc, s) => this.fireShot(s, npc, this.npcFlash));
+
     this.projectiles.update(dt, this.world, this.targets, (imp) => this.onImpact(imp));
+    this.updateDeath(dt);
     this.targets.update(dt);
     this.particles.update(dt);
     this.flash.update(dt);
+    this.npcFlash.update(dt);
   }
 
   private updateAim(): void {
@@ -237,7 +279,7 @@ export class Game {
     // A few passes so buildings dithered away in front of the player don't catch the cursor.
     for (let pass = 0; pass < 4; pass++) {
       const wh = this.world.raycast(a.x, a.y, a.z, b.x, b.y, b.z);
-      const th = this.targets.raycast(a, b);
+      const th = this.targets.raycast(a, b, this.player);
       if (th && (!wh || th.t <= wh.t)) {
         out.copy(a).lerp(b, th.t);
         return;
@@ -255,42 +297,70 @@ export class Game {
     return this.occluders.some((o) => o.fade.value > 0.3 && x > o.minX - e && x < o.maxX + e && z > o.minZ - e && z < o.maxZ + e);
   }
 
-  private toggleMount(): void {
+  private fireShot(shot: ShotRequest, shooter: Player | Npc, flash: MuzzleFlash): void {
+    for (const dir of shot.dirs) this.projectiles.fire(shot.origin, dir, shot.weapon, shooter);
+    const d = shot.dirs[0];
+    flash.trigger(shot.origin, d);
+    // A wisp of smoke at the muzzle.
+    this.particles.spawn(shot.origin.x, shot.origin.y, shot.origin.z, d.x * 1.5, 0.6, d.z * 1.5, 0.35, 0.16, 0.5, shot.dirs.length > 1 ? 5 : 3, 0xe8cf9b);
+  }
+
+  /** Death → short pause → respawn at the start with everyone calmed down. */
+  private updateDeath(dt: number): void {
+    const p = this.player;
+    if (!p.dead && p.hp <= 0) {
+      if (p.mounted) this.dismount();
+      p.holster(true);
+      p.dead = true;
+      p.vel.set(0, 0);
+      this.respawnLeft = CONFIG.player.respawnTime;
+    } else if (p.dead) {
+      this.respawnLeft -= dt;
+      if (this.respawnLeft <= 0) {
+        p.revive(this.playerSpawn);
+        this.npcs.calmAll();
+      }
+    }
+  }
+
+  private mount(): void {
     const p = this.player;
     const h = this.horse;
-    if (p.mounted) {
-      // Dismount to the side, falling back to the other side / behind if blocked.
-      const hy = h.heading;
-      const candidates = [
-        [Math.cos(hy), -Math.sin(hy)],
-        [-Math.cos(hy), Math.sin(hy)],
-        [-Math.sin(hy), -Math.cos(hy)],
-      ];
-      let best = candidates[0];
-      for (const c of candidates) {
-        const test = { x: h.pos.x + c[0] * 1.3, z: h.pos.z + c[1] * 1.3 };
-        const before = { ...test };
-        this.world.resolveCircle(test, CONFIG.player.radius);
-        if (Math.hypot(test.x - before.x, test.z - before.z) < 1e-4) {
-          best = c;
-          break;
-        }
+    p.mounted = true;
+    h.ridden = true;
+    p.vel.set(0, 0);
+    h.model.saddle.add(p.model.root);
+    p.model.root.position.set(0, 0, 0);
+    p.setPosition(h.pos);
+  }
+
+  private dismount(): void {
+    const p = this.player;
+    const h = this.horse;
+    // Dismount to the side, falling back to the other side / behind if blocked.
+    const hy = h.heading;
+    const candidates = [
+      [Math.cos(hy), -Math.sin(hy)],
+      [-Math.cos(hy), Math.sin(hy)],
+      [-Math.sin(hy), -Math.cos(hy)],
+    ];
+    let best = candidates[0];
+    for (const c of candidates) {
+      const test = { x: h.pos.x + c[0] * 1.3, z: h.pos.z + c[1] * 1.3 };
+      const before = { ...test };
+      this.world.resolveCircle(test, CONFIG.player.radius);
+      if (Math.hypot(test.x - before.x, test.z - before.z) < 1e-4) {
+        best = c;
+        break;
       }
-      p.mounted = false;
-      h.ridden = false;
-      p.setPosition(new THREE.Vector3(h.pos.x + best[0] * 1.3, 0, h.pos.z + best[1] * 1.3));
-      p.vel.set(Math.sin(hy) * h.motor.speed * 0.3, Math.cos(hy) * h.motor.speed * 0.3);
-      this.scene.add(p.model.root);
-      p.model.root.rotation.set(0, 0, 0);
-      this.particles.burst('dust', p.pos.clone().setY(0.1));
-    } else if (p.pos.distanceTo(h.pos) < CONFIG.player.mountRange) {
-      p.mounted = true;
-      h.ridden = true;
-      p.vel.set(0, 0);
-      h.model.saddle.add(p.model.root);
-      p.model.root.position.set(0, 0, 0);
-      p.setPosition(h.pos);
     }
+    p.mounted = false;
+    h.ridden = false;
+    p.setPosition(new THREE.Vector3(h.pos.x + best[0] * 1.3, 0, h.pos.z + best[1] * 1.3));
+    p.vel.set(Math.sin(hy) * h.motor.speed * 0.3, Math.cos(hy) * h.motor.speed * 0.3);
+    this.scene.add(p.model.root);
+    p.model.root.rotation.set(0, 0, 0);
+    this.particles.burst('dust', p.pos.clone().setY(0.1));
   }
 
   private spawnFootsteps(dt: number): void {
@@ -304,10 +374,17 @@ export class Game {
   }
 
   private onImpact(imp: Impact): void {
+    const byPlayer = imp.shooter === this.player;
+    const hitNpc = imp.target instanceof Npc ? imp.target : null;
+    if (byPlayer) {
+      if (hitNpc?.alive) this.npcs.onPlayerHitNpc(hitNpc, this.player);
+      this.npcs.onPlayerShotLanded(imp.point, hitNpc);
+    }
     if (imp.target) {
-      const kind = imp.target.hit(imp.point, imp.dir);
+      const kind = imp.target.hit(imp.point, imp.dir, { damage: imp.damage, shooter: imp.shooter });
       this.particles.burst(kind, imp.point, imp.dir.clone().multiplyScalar(0.6).add(imp.normal));
-      this.particles.burst('spark', imp.point, imp.normal, 0.5);
+      if (kind !== 'blood') this.particles.burst('spark', imp.point, imp.normal, 0.5);
+      if (imp.target === this.player) this.rig.addTrauma(0.35);
       return;
     }
     const kinds = imp.surface === 'target' ? ['dust' as BurstKind] : IMPACT_BURSTS[imp.surface];
@@ -323,6 +400,7 @@ export class Game {
     this.horse.sync(alpha, frameDt);
     if (!p.mounted) p.model.root.position.lerpVectors(p.prevPos, p.pos, alpha);
     p.animate(frameDt);
+    for (const n of this.npcs.npcs) n.sync(alpha, frameDt);
     this.projectiles.sync(alpha);
 
     // Camera: follow the (interpolated) player, lead a little towards the aim and travel direction.
@@ -348,11 +426,16 @@ export class Game {
       this.renderer.render(this.scene, this.rig.view);
     }
 
-    const nearHorse = !p.mounted && p.pos.distanceTo(this.horse.pos) < CONFIG.player.mountRange;
     this.hud.draw(frameDt, {
       ammo: p.ammo,
+      magazine: p.weapon.def.magazine,
+      hp: p.hp,
+      maxHp: CONFIG.player.maxHp,
+      hurt: p.hurt,
+      dead: p.dead,
+      labels: this.worldLabels(),
       reloadProgress: p.reloadProgress,
-      prompt: nearHorse ? '[E] MOUNT' : this.elapsed < 9 ? 'WASD MOVE  MOUSE AIM  CLICK SHOOT  R RELOAD' : null,
+      prompt: this.elapsed < 9 ? 'WASD MOVE  MOUSE AIM  CLICK SHOOT  R RELOAD  E USE' : null,
       cursorX: this.cursor?.x ?? null,
       cursorY: this.cursor?.y ?? null,
       mounted: p.mounted,
@@ -363,7 +446,43 @@ export class Game {
       `low-res ${this.lowW}x${this.lowH} x${this.scale}  pixel ${this.pixelate ? 'on' : 'off'}  palette ${this.pixelPass.quantize ? 'on' : 'off'} [O]  outlines [L]`,
       `player ${p.pos.x.toFixed(1)}, ${p.pos.z.toFixed(1)}  ${p.mounted ? 'mounted' : 'on foot'}  ammo ${p.ammo}`,
       `draw calls ${this.renderer.info.render.calls}`,
+      `npcs ${this.npcs.npcs.map((n) => `${n.name.split(' ')[0]}:${n.mode}${n.mode !== 'routine' && n.alive ? ` ${n.calmTimer.toFixed(0)}s` : ''}`).join('  ')}`,
     ]);
+  }
+
+  private projected = new THREE.Vector3();
+  /** World point → low-res HUD pixel. */
+  private project(x: number, y: number, z: number): { x: number; y: number } {
+    const v = this.projected.set(x, y, z).project(this.rig.view);
+    return { x: ((v.x + 1) / 2) * this.lowW, y: ((1 - v.y) / 2) * this.lowH };
+  }
+
+  /** Name tag + prompt for the interaction target, speech bubbles, aim warnings. */
+  private worldLabels(): WorldLabel[] {
+    const out: WorldLabel[] = [];
+    const t = this.interactTarget;
+    for (const n of this.npcs.npcs) {
+      if (!n.alive) continue;
+      const r = n.model.root.position;
+      const head = this.project(r.x, 2.15, r.z);
+      // Stacked upwards: name tag, prompt, aim warning, speech bubble.
+      let y = head.y;
+      if (t === n) {
+        out.push({ kind: 'name', text: n.name, x: head.x, y });
+        out.push({ kind: 'prompt', text: `[E] ${t.label}`, x: head.x, y: y - 10 });
+        y -= 18;
+      }
+      if (n.telegraphing) {
+        out.push({ kind: 'alert', text: '!', x: head.x, y });
+        y -= 8;
+      }
+      if (n.speech) out.push({ kind: 'speech', text: n.speech, x: head.x, y });
+    }
+    if (t && !(t instanceof Npc)) {
+      const at = this.project(t.position.x, t.promptHeight, t.position.z);
+      out.push({ kind: 'prompt', text: `[E] ${t.label}`, x: at.x, y: at.y });
+    }
+    return out;
   }
 
   /** Dither out buildings that sit between the camera and the player. */

@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config';
-import type { CollisionWorld, CircleCollider } from '../world/Colliders';
+import { WEAPONS } from '../data/weapons';
+import { segmentVsCylinder, type CollisionWorld, type CircleCollider } from '../world/Colliders';
+import type { BurstKind } from './Particles';
 import { PlayerModel } from './PlayerModel';
+import type { HitInfo, Target } from './Targets';
+import { WeaponState, type ShotRequest } from './Weapon';
 import { dirToYaw, moveToward, yawToX, yawToZ } from '../util/math';
 
 export interface PlayerInput {
@@ -11,17 +15,15 @@ export interface PlayerInput {
   sprint: boolean;
   fireHeld: boolean;
   reload: boolean;
+  /** Put the weapon away. */
+  holster: boolean;
   /** Aim point in world space: the surface under the crosshair. */
   aim: THREE.Vector3;
 }
 
-export interface ShotRequest {
-  origin: THREE.Vector3;
-  dir: THREE.Vector3;
-}
-
-export class Player {
+export class Player implements Target {
   readonly model = new PlayerModel();
+  readonly weapon = new WeaponState(WEAPONS.revolver);
   readonly pos = new THREE.Vector3();
   readonly prevPos = new THREE.Vector3();
   readonly vel = new THREE.Vector2();
@@ -29,24 +31,34 @@ export class Player {
   aimYaw = 0;
   sprinting = false;
 
-  ammo = CONFIG.revolver.magazine;
-  private cooldown = 0;
-  /** Remaining reload time, 0 when not reloading. */
-  reloadLeft = 0;
   recoil = 0;
+  /** 0 = holstered, 1 = drawn; in between plays the draw (or holster). */
+  draw = 0;
+  private drawTarget = 0;
+  /** Seconds since the last shot (or draw), for auto-holstering. */
+  private idle = 0;
+  hp = CONFIG.player.maxHp;
+  dead = false;
+  /** 1 right after taking damage, fades to 0 (HUD flash). */
+  hurt = 0;
+  private sinceHurt = 0;
 
   /** Set while riding: horse speed and yaw, used for spread and pose. */
   mounted = false;
   mountSpeed = 0;
   mountYaw = 0;
 
-  get reloading(): boolean {
-    return this.reloadLeft > 0;
+  get object(): THREE.Object3D {
+    return this.model.root;
+  }
+
+  get ammo(): number {
+    return this.weapon.ammo;
   }
 
   /** 0..1 reload progress or -1. */
   get reloadProgress(): number {
-    return this.reloading ? 1 - this.reloadLeft / CONFIG.revolver.reloadTime : -1;
+    return this.weapon.reloadProgress;
   }
 
   speed(): number {
@@ -58,14 +70,11 @@ export class Player {
     this.prevPos.copy(p);
   }
 
-  startReload(): void {
-    if (!this.reloading && this.ammo < CONFIG.revolver.magazine) this.reloadLeft = CONFIG.revolver.reloadTime;
-  }
-
   /** Movement on foot. When mounted the Game moves the player with the horse. */
   updateMovement(dt: number, input: PlayerInput, world: CollisionWorld, dynamic: readonly CircleCollider[]): void {
     this.prevPos.copy(this.pos);
     if (this.mounted) return;
+    if (this.dead) input = { ...input, moveX: 0, moveZ: 0 };
     const pc = CONFIG.player;
     const hasInput = input.moveX !== 0 || input.moveZ !== 0;
     this.sprinting = hasInput && input.sprint;
@@ -94,34 +103,30 @@ export class Player {
     if (this.vel.lengthSq() > 0.04) this.moveYaw = dirToYaw(this.vel.x, this.vel.y);
   }
 
-  /** Aim, reload and fire. Returns a shot when the revolver fires this step. */
+  /** Aim, reload and fire. Returns a shot when the weapon fires this step. */
   updateWeapon(dt: number, input: PlayerInput): ShotRequest | null {
-    const rc = CONFIG.revolver;
     const ax = input.aim.x - this.pos.x;
     const az = input.aim.z - this.pos.z;
     if (ax * ax + az * az > 0.01) this.aimYaw = dirToYaw(ax, az);
 
-    this.cooldown = Math.max(0, this.cooldown - dt);
+    this.weapon.update(dt);
     this.recoil = moveToward(this.recoil, 0, dt * 5);
 
-    if (this.reloading) {
-      this.reloadLeft -= dt;
-      if (this.reloadLeft <= 0) {
-        this.reloadLeft = 0;
-        this.ammo = rc.magazine;
-      }
+    // Holster on request or after a while without shooting; shooting or reloading draws again.
+    this.idle += dt;
+    if (input.holster || (this.drawTarget === 1 && this.idle >= CONFIG.player.autoHolsterTime)) this.holster();
+    else if ((input.fireHeld || input.reload) && this.drawTarget === 0) {
+      this.drawTarget = 1;
+      this.idle = 0;
     }
-    if (input.reload) this.startReload();
-
-    if (!input.fireHeld || this.cooldown > 0 || this.reloading) return null;
-    if (this.ammo <= 0) {
-      this.startReload();
-      return null;
+    this.draw = moveToward(this.draw, this.drawTarget, dt / this.weapon.def.drawTime);
+    if (input.reload) this.reloadQueued = true;
+    if (this.draw < 1) return null;
+    if (this.reloadQueued) {
+      this.weapon.startReload();
+      this.reloadQueued = false;
     }
-
-    this.ammo--;
-    this.cooldown = rc.fireCooldown;
-    this.recoil = 1;
+    if (!input.fireHeld) return null;
 
     // Muzzle in world space, computed from the logical pose (right hand, shoulder height).
     const muzzleH = this.mounted ? 2.34 : 1.38; // shoulder height of the gun arm (see PlayerModel/HorseModel)
@@ -136,31 +141,65 @@ export class Player {
       this.pos.z + fz * 0.75 + sz * 0.18,
     );
 
-    // Scatter the impact around the crosshair. The radius grows faster than linearly with
-    // distance, so far shots are disproportionately harder to land.
-    let spread = rc.spreadStanding;
-    if (this.mounted) spread = rc.spreadMounted + this.mountSpeed * rc.spreadMountedPerSpeed;
-    else if (this.speed() > 0.5) spread = rc.spreadMoving;
-    const aim = input.aim.clone();
-    const dist = Math.hypot(aim.x - origin.x, aim.z - origin.z);
-    const radius = dist * Math.tan(spread) * (1 + dist * rc.spreadGrowth);
-    const a = Math.random() * Math.PI * 2;
-    const r = radius * Math.random(); // biased towards the centre
-    aim.x += Math.cos(a) * r;
-    aim.z += Math.sin(a) * r;
-    // Raised surfaces (walls, targets) also scatter vertically; ground shots stay on the ground.
-    if (aim.y > 0.05) aim.y = Math.max(0, aim.y + (Math.random() - 0.5) * radius);
-
-    // Fire straight at that point. If it's right at (or behind) the muzzle, keep the facing
-    // direction so the shot never goes back through the shooter.
-    let dx = aim.x - origin.x;
-    let dz = aim.z - origin.z;
-    if (Math.hypot(dx, dz) < 0.6) {
-      dx = fx * 0.6;
-      dz = fz * 0.6;
+    const pc = CONFIG.player;
+    let spreadMul = 1;
+    if (this.mounted) spreadMul = pc.spreadMountedMul + this.mountSpeed * pc.spreadMountedPerSpeed;
+    else if (this.speed() > 0.5) spreadMul = pc.spreadMovingMul;
+    const shot = this.weapon.fire(origin, input.aim, spreadMul, this.aimYaw);
+    if (shot) {
+      this.recoil = 1;
+      this.idle = 0;
     }
-    const dir = new THREE.Vector3(dx, aim.y - origin.y, dz).normalize();
-    return { origin, dir };
+    return shot;
+  }
+
+  get drawn(): boolean {
+    return this.drawTarget === 1;
+  }
+
+  /** Put the gun away (cancels a reload in progress). `instant` skips the animation. */
+  holster(instant = false): void {
+    this.drawTarget = 0;
+    this.reloadQueued = false;
+    this.weapon.cancelReload();
+    if (instant) this.draw = 0;
+  }
+
+  private reloadQueued = false;
+
+  // ---------------------------------------------------------------- Target (hitbox)
+
+  test(a: THREE.Vector3, b: THREE.Vector3): { t: number; normal: THREE.Vector3 } | null {
+    if (this.dead) return null;
+    const [y0, y1] = this.mounted ? [1.0, 2.95] : [0, 1.85];
+    const h = segmentVsCylinder(a.x, a.y, a.z, b.x, b.y, b.z, this.pos.x, this.pos.z, 0.38, y0, y1);
+    return h ? { t: h.t, normal: new THREE.Vector3(h.nx, h.ny, h.nz) } : null;
+  }
+
+  hit(_point: THREE.Vector3, _dir: THREE.Vector3, info: HitInfo): BurstKind {
+    if (!this.dead) {
+      this.hp = Math.max(0, this.hp - info.damage);
+      this.sinceHurt = 0;
+      this.hurt = 1;
+    }
+    return 'blood';
+  }
+
+  update(dt: number): void {
+    this.hurt = Math.max(0, this.hurt - dt * 2.5);
+    if (this.dead) return;
+    this.sinceHurt += dt;
+    const pc = CONFIG.player;
+    if (this.sinceHurt > pc.regenDelay) this.hp = Math.min(pc.maxHp, this.hp + pc.regenRate * dt);
+  }
+
+  /** Back on your feet with full health and a full gun. */
+  revive(p: THREE.Vector3): void {
+    this.dead = false;
+    this.hp = CONFIG.player.maxHp;
+    this.weapon.refill();
+    this.vel.set(0, 0);
+    this.setPosition(p);
   }
 
   animate(dt: number): void {
@@ -173,6 +212,8 @@ export class Player {
       reload: this.reloadProgress,
       mounted: this.mounted,
       horseYaw: this.mountYaw,
+      dead: this.dead,
+      draw: this.draw,
     });
   }
 }

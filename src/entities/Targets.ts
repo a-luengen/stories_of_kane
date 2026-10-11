@@ -6,13 +6,21 @@ import { segmentVsCylinder } from '../world/Colliders';
 import type { BurstKind } from './Particles';
 import { clamp } from '../util/math';
 
+export interface HitInfo {
+  /** Damage after distance falloff. */
+  damage: number;
+  /** Who fired (their own hitbox), or null. */
+  shooter: Target | null;
+}
+
 export interface Target {
   readonly object: THREE.Object3D;
   /** Returns the hit parameter along a→b, or null. */
   test(a: THREE.Vector3, b: THREE.Vector3): { t: number; normal: THREE.Vector3 } | null;
   /** Apply a hit; returns the particle burst to spawn. */
-  hit(point: THREE.Vector3, dir: THREE.Vector3): BurstKind;
-  update(dt: number): void;
+  hit(point: THREE.Vector3, dir: THREE.Vector3, info: HitInfo): BurstKind;
+  /** Per-step animation (static targets; actors update themselves). */
+  update?(dt: number): void;
 }
 
 class Bottle implements Target {
@@ -96,7 +104,7 @@ class Dummy implements Target {
     return h ? { t: h.t, normal: new THREE.Vector3(h.nx, h.ny, h.nz) } : null;
   }
 
-  hit(_point: THREE.Vector3, dir: THREE.Vector3): BurstKind {
+  hit(_point: THREE.Vector3, dir: THREE.Vector3, _info: HitInfo): BurstKind {
     // Angular kick in the bullet's direction (world space XZ).
     this.tiltVel.x += dir.x * 4.5;
     this.tiltVel.y += dir.z * 4.5;
@@ -159,6 +167,8 @@ class Dummy implements Target {
 export class TargetSystem {
   readonly group = new THREE.Group();
   readonly targets: Target[] = [];
+  /** Characters (player, NPCs): shootable, but their models live elsewhere in the scene and update themselves. */
+  readonly actors: Target[] = [];
 
   addBottle(pos: THREE.Vector3, color: number): void {
     this.add(new Bottle(pos.clone(), color));
@@ -168,21 +178,29 @@ export class TargetSystem {
     this.add(new Dummy(pos.clone(), yaw));
   }
 
+  addActor(t: Target): void {
+    this.actors.push(t);
+  }
+
   private add(t: Target): void {
     this.targets.push(t);
     this.group.add(t.object);
   }
 
-  raycast(a: THREE.Vector3, b: THREE.Vector3): { t: number; normal: THREE.Vector3; target: Target } | null {
+  /** Nearest target or actor along a→b, skipping `ignore` (e.g. the shooter). */
+  raycast(a: THREE.Vector3, b: THREE.Vector3, ignore: Target | null = null): { t: number; normal: THREE.Vector3; target: Target } | null {
     let best: { t: number; normal: THREE.Vector3; target: Target } | null = null;
-    for (const target of this.targets) {
-      const h = target.test(a, b);
-      if (h && (!best || h.t < best.t)) best = { ...h, target };
+    for (const list of [this.targets, this.actors]) {
+      for (const target of list) {
+        if (target === ignore) continue;
+        const h = target.test(a, b);
+        if (h && (!best || h.t < best.t)) best = { ...h, target };
+      }
     }
     return best;
   }
 
   update(dt: number): void {
-    for (const t of this.targets) t.update(dt);
+    for (const t of this.targets) t.update?.(dt);
   }
 }

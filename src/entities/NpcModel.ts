@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { AppearanceConfig, WeaponDef } from '../data/types';
 import { CharacterRig } from '../render/CharacterRig';
-import { angleDelta, clamp, damp, dampAngle, lerp, moveToward } from '../util/math';
+import { CROUCH_LEAN, legTargets } from '../render/HumanGait';
+import { angleDelta, clamp, damp, dampAngle, lerp, moveToward, smoothstep } from '../util/math';
 
 export interface NpcPose {
   /** Horizontal speed (units/s). */
@@ -38,7 +39,8 @@ export class NpcModel {
   private time = 0;
   private hipsYaw = 0;
   private upperYaw = 0;
-  private bob = 0;
+  private stride = 0;
+  private run = 0;
   private fall = 0;
   private crouch = 0;
   private fallAxis = new THREE.Vector3();
@@ -73,7 +75,7 @@ export class NpcModel {
     const moving = p.speed > 0.3 && !p.dead;
     const aiming = p.draw > 0.5;
 
-    const { hips, upper, head, legL, legR, armL, armR } = this.rig;
+    const { hips, upper, head, armL, armR } = this.rig;
     // Weapon follows the hand from the middle of the draw on.
     this.rig.placeWeapons(0, p.draw > 0.5, true);
 
@@ -94,41 +96,34 @@ export class NpcModel {
     upper.rotation.y = this.upperYaw;
     head.rotation.y = damp(head.rotation.y, clamp(angleDelta(this.upperYaw, p.lookYaw), -0.8, 0.8), 8, dt);
 
-    // Walk / run cycle.
+    // Gait (knees, feet flat in stance; the planted foot sets the hip height).
     const run = p.speed > 3.2;
-    const stride = run ? 1.25 : 0.95;
-    if (moving) this.phase += dt * p.speed * (run ? 2.0 : 2.6);
-    const amp = moving ? clamp(p.speed / 4, 0.35, 1) * (run ? 0.9 : 0.6) : 0;
-    const swing = Math.sin(this.phase * stride) * amp;
-    this.crouch = damp(this.crouch, p.cower ? 1 : 0, 6, dt);
-    let legLx = swing;
-    let legRx = -swing;
-    let legRz = 0;
-    if (p.lean) {
-      legLx = -0.06;
-      legRx = 0.12;
-      legRz = -0.22; // ankles crossed
-    }
-    legLx = lerp(legLx, -1.45, this.crouch);
-    legRx = lerp(legRx, -1.45, this.crouch);
-    if (p.mounted) {
-      // Straddle: thighs forward/outward, boots down along the flanks.
-      legL.rotation.set(-0.45, 0, -0.42);
-      legR.rotation.set(-0.45, 0, 0.42);
-    } else {
-      legL.rotation.set(damp(legL.rotation.x, legLx, 16, dt), 0, 0);
-      legR.rotation.set(damp(legR.rotation.x, legRx, 16, dt), 0, damp(legR.rotation.z, legRz, 10, dt));
-    }
-    if (this.rig.skirt) this.rig.skirt.rotation.x = swing * 0.12;
-
-    const targetBob = moving ? Math.abs(Math.cos(this.phase * stride)) * 0.06 * amp : Math.sin(this.time * 2) * 0.01;
-    this.bob = damp(this.bob, targetBob, 20, dt);
-    const hipY = 0.88 + this.bob - this.crouch * 0.58 - p.flinch * 0.08;
-    hips.position.y = hipY;
-    upper.position.y = hipY;
+    if (moving) this.phase += dt * p.speed * (run ? 1.9 : 2.4);
+    this.stride = damp(this.stride, moving ? clamp(p.speed / 4.3, 0.3, 1) : 0, 8, dt);
+    this.run = damp(this.run, run ? 1 : 0, 6, dt);
+    this.crouch = damp(this.crouch, p.cower ? 1 : p.flinch * 0.35, 6, dt);
+    const swing = Math.sin(this.phase) * this.stride * 0.85; // arm swing, opposite to the legs
+    const pelvis = this.rig.poseLegs(
+      legTargets({
+        phase: this.phase,
+        stride: this.stride,
+        run: this.run,
+        crouch: this.crouch,
+        time: this.time,
+        buckle: this.fall > 0 ? this.buckle : 0,
+        mounted: p.mounted,
+        crossed: p.lean,
+      }),
+      dt,
+      16,
+    );
+    this.rig.poseSkirt(this.crouch, swing);
+    this.rig.placePelvis(p.mounted ? 0.88 : pelvis, p.mounted ? 0 : this.crouch);
     let pitch = moving ? (run ? 0.14 : 0.04) : 0;
     if (p.lean) pitch = -0.16;
-    pitch += p.flinch * 0.3 + this.crouch * 0.35 - p.recoil * 0.1;
+    // Crouched, the torso folds forward over the feet (weight over the feet, not behind them).
+    const lean = p.mounted ? 0 : CROUCH_LEAN * this.crouch;
+    pitch += p.flinch * 0.3 + lean - p.recoil * 0.1;
     upper.rotation.x = damp(upper.rotation.x, pitch, 12, dt);
 
     // Arms.
@@ -143,10 +138,11 @@ export class NpcModel {
     if (p.draw > 0) {
       // Rest → reach (hip or shoulder) → aim, as `draw` goes 0 → 0.5 → 1.
       const reach = this.longGun ? { x: -2.7, y: 0, z: 0.35 } : this.alwaysInHand ? rest : { x: 0.3, y: 0, z: 0.12 };
-      const aim = this.longGun ? { x: -Math.PI / 2 + 0.08, y: -0.25, z: 0 } : { x: -Math.PI / 2 - p.recoil * 0.5, y: -0.12, z: 0 };
+      // Aim stays level however far the torso leans.
+      const aim = this.longGun ? { x: -Math.PI / 2 + 0.08 - lean, y: -0.25, z: 0 } : { x: -Math.PI / 2 - p.recoil * 0.5 - lean, y: -0.12, z: 0 };
       const t = p.draw;
       r = t < 0.5 ? mix(r, reach, t * 2) : mix(reach, aim, (t - 0.5) * 2);
-      if (this.longGun && t > 0.5) l = mix(l, { x: -Math.PI / 2 + 0.15, y: 0.55, z: 0 }, (t - 0.5) * 2);
+      if (this.longGun && t > 0.5) l = mix(l, { x: -Math.PI / 2 + 0.15 - lean, y: 0.55, z: 0 }, (t - 0.5) * 2);
     }
     if (p.reload >= 0) {
       const k = Math.sin(Math.min(1, p.reload) * Math.PI);
@@ -162,13 +158,19 @@ export class NpcModel {
     const s = p.draw > 0 && p.draw < 1 ? 22 : 14;
     armR.rotation.set(damp(armR.rotation.x, r.x, s, dt), damp(armR.rotation.y, r.y, s, dt), damp(armR.rotation.z, r.z, s, dt));
     armL.rotation.set(damp(armL.rotation.x, l.x, 14, dt), damp(armL.rotation.y, l.y, 14, dt), damp(armL.rotation.z, l.z, 14, dt));
-    head.rotation.x = p.flinch * 0.3 - p.recoil * 0.08 + (p.lean ? 0.12 : 0);
+    head.rotation.x = p.flinch * 0.3 - p.recoil * 0.08 + (p.lean ? 0.12 : 0) - lean * 0.8;
 
-    // Fall backwards (about the torso's right axis, pivoting at the feet).
-    this.fall = moveToward(this.fall, p.dead ? 1 : 0, dt * (p.dead ? 2.4 : 6));
-    const k = this.fall * this.fall;
+    // Death: the knees buckle first, then the body tips over backwards (about the torso's right
+    // axis, pivoting at the feet); lying down, the legs relax half straight.
+    this.fall = moveToward(this.fall, p.dead ? 1 : 0, dt * (p.dead ? 1.6 : 6));
+    const k = smoothstep(0.3, 1, this.fall) ** 2;
     this.rig.body.quaternion.setFromAxisAngle(this.fallAxis.set(Math.cos(this.upperYaw), 0, -Math.sin(this.upperYaw)), -k * 1.5);
     this.rig.body.position.y = k * 0.14;
+  }
+
+  /** Death buckle: knees give way first, then relax once lying down. */
+  private get buckle(): number {
+    return this.fall < 0.6 ? smoothstep(0, 0.35, this.fall) : lerp(1, 0.35, (this.fall - 0.6) / 0.4);
   }
 
   /** Snap the facing (on spawn). */

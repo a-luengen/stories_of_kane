@@ -3,6 +3,8 @@ export type Surface = 'wood' | 'rock' | 'cactus' | 'metal' | 'dirt';
 interface ColliderBase {
   /** Extruded from y = 0 up to this height (bullets above it pass over). */
   height: number;
+  /** Bottom of the collider (default 0). Above-ground colliders are overhead: they don't block walking, only standing up. */
+  base?: number;
   surface: Surface;
   /** Static props like dummy posts block movement but bullets are handled elsewhere. */
   blocksBullets: boolean;
@@ -110,6 +112,7 @@ export class CollisionWorld {
       const list = this.query(pos.x - radius, pos.z - radius, pos.x + radius, pos.z + radius, this.scratch);
       const all = extra ? list.concat(extra) : list;
       for (const c of all) {
+        if ((c.base ?? 0) > 0) continue; // overhead: you pass underneath
         const r = c.kind === 'circle' ? pushCircleCircle(pos, radius, c) : pushCircleBox(pos, radius, c);
         if (r) {
           any = true;
@@ -137,6 +140,22 @@ export class CollisionWorld {
       if (!any) break;
     }
     return contact;
+  }
+
+  /**
+   * Is there anything overhead (a collider raised off the ground) in the way of a body of radius
+   * `r` at (x, z) between heights `fromY` and `toY`? Used before standing up from a crouch.
+   */
+  blocksStanding(x: number, z: number, r: number, fromY: number, toY: number): boolean {
+    const list = this.query(x - r, z - r, x + r, z + r, this.scratch);
+    return list.some((c) => {
+      const base = c.base ?? 0;
+      if (base <= 0 || base >= toY || c.height <= fromY) return false;
+      if (c.kind === 'circle') return Math.hypot(x - c.x, z - c.z) < r + c.r;
+      const cx = Math.max(c.minX, Math.min(x, c.maxX));
+      const cz = Math.max(c.minZ, Math.min(z, c.maxZ));
+      return Math.hypot(x - cx, z - cz) < r;
+    });
   }
 
   /** Swept 3D segment test against extruded colliders and the ground plane. */

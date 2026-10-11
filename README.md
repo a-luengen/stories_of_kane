@@ -23,6 +23,7 @@ npm run build      # typecheck + production build
 | Enter | Wave mode: skip the break between waves |
 | H | Holster the revolver (also happens after 30 s without shooting, and on death) |
 | E | Use what you're aiming at: talk, trade, loot a corpse, pick up an item, mount a horse · always dismounts when riding |
+| C | Crouch / stand (on foot): half speed, steadier aim, smaller target · Shift stands you up into a sprint |
 | Shift | Sprint on foot / gallop on horse |
 | P | Toggle pixelation (debug) |
 | O / L | Toggle palette quantization / outlines |

@@ -314,6 +314,7 @@ export class Session {
       reload: input.consume('KeyR') && !p.dead,
       holster: input.consume('KeyH'),
       select: this.slotKey(),
+      crouch: input.consume('KeyC'),
       aim: this.aim,
     };
 
@@ -430,6 +431,7 @@ export class Session {
     if (p.dead || p.hp > 0) return;
     if (p.mounted) this.dismount();
     p.holster(true);
+    p.crouched = false; // eases out while falling
     p.dead = true;
     p.vel.set(0, 0);
     this.hooks.onPlayerDeath();
@@ -442,6 +444,7 @@ export class Session {
 
   mount(h: Horse): void {
     const p = this.player;
+    p.cancelCrouch();
     p.mounted = true;
     h.ridden = true;
     h.driver = null;
@@ -563,6 +566,7 @@ export class Session {
         ammo: w ? { loaded: w.ammo, magazine: w.def.magazine, reserve: w.reserve } : null,
         reloadProgress: p.reloadProgress,
         noAmmo: p.noAmmo > 0,
+        stance: p.mounted ? null : p.crouched ? 'crouch' : 'stand',
       },
       toast: this.toast?.text ?? null,
       menuOpen,

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { CONFIG } from '../config';
 import { createItem } from '../items/ItemInstance';
+import { CollisionWorld } from '../world/Colliders';
 import { Player, type PlayerInput } from './Player';
 
 const DT = 1 / 60;
@@ -116,5 +117,89 @@ describe('player inventory weapons', () => {
     expect(p.draw).toBe(0);
     expect(p.weapon).toBeNull();
     expect(run(p, 1, { fireHeld: true })).toBe(0);
+  });
+});
+
+describe('crouching', () => {
+  const world = new CollisionWorld(50);
+  const move = (p: Player, seconds: number, over: Partial<PlayerInput> = {}) => {
+    for (let t = 0; t < seconds; t += DT) p.updateMovement(DT, input(over), world, []);
+  };
+
+  it('C toggles crouch; the pose blends in over ~0.2 s', () => {
+    const p = new Player();
+    move(p, DT, { crouch: true });
+    expect(p.crouched).toBe(true);
+    expect(p.crouch).toBeLessThan(1);
+    move(p, CONFIG.player.crouch.blendTime + 0.02);
+    expect(p.crouch).toBe(1);
+    move(p, DT, { crouch: true });
+    expect(p.crouched).toBe(false);
+  });
+
+  it('halves the speed; Shift stands up into a sprint', () => {
+    const p = new Player();
+    move(p, DT, { crouch: true });
+    move(p, 1, { moveX: 1 });
+    expect(p.speed()).toBeCloseTo(CONFIG.player.walkSpeed * CONFIG.player.crouch.speedMul, 1);
+    move(p, 1, { moveX: 1, sprint: true });
+    expect(p.crouched).toBe(false);
+    expect(p.sprinting).toBe(true);
+    expect(p.speed()).toBeCloseTo(CONFIG.player.sprintSpeed, 1);
+  });
+
+  it('not available while mounted; mounting cancels it', () => {
+    const p = new Player();
+    move(p, DT, { crouch: true });
+    move(p, 0.5);
+    expect(p.crouch).toBe(1);
+    p.mounted = true;
+    move(p, DT);
+    expect([p.crouched, p.crouch]).toEqual([false, 0]);
+    move(p, DT, { crouch: true });
+    expect(p.crouched).toBe(false);
+  });
+
+  it("can't stand up under something low overhead", () => {
+    const low = new CollisionWorld(50);
+    // A beam 1.3 high over the spot (doesn't block walking, only standing up).
+    const beam = low.addBox(-1, -1, 1, 1, 1.6, 'wood');
+    beam.base = 1.3;
+    const p = new Player();
+    p.setPosition(new THREE.Vector3(0, 0, 0));
+    p.updateMovement(DT, input({ crouch: true }), low, []);
+    p.updateMovement(DT, input({ crouch: true }), low, []);
+    expect(p.crouched).toBe(true);
+    p.updateMovement(DT, input({ sprint: true, moveX: 1 }), low, []);
+    expect(p.crouched).toBe(true);
+    expect(low.blocksStanding(5, 5, 0.35, 1.15, 1.85)).toBe(false);
+  });
+
+  it('steadier aim and a smaller hitbox when crouched', () => {
+    const p = new Player();
+    const shotAt = (q: Player) => {
+      // Spread scale: fire many shots at a far point and measure the widest miss.
+      let worst = 0;
+      for (let i = 0; i < 200; i++) {
+        q.weapon!.refill();
+        const s = q.updateWeapon(1, input({ fireHeld: true, aim: new THREE.Vector3(0, 0, 30) }));
+        if (s) worst = Math.max(worst, Math.abs(s.dirs[0].x));
+      }
+      return worst;
+    };
+    run(p, 1, { fireHeld: true });
+    const standing = shotAt(p);
+    move(p, DT, { crouch: true });
+    move(p, 0.5);
+    const crouched = shotAt(p);
+    expect(crouched).toBeLessThan(standing * 0.75);
+    // Bullet passing at 1.4 m: hits a standing player, misses a crouched one.
+    const over = [new THREE.Vector3(-1, 1.4, 0), new THREE.Vector3(1, 1.4, 0)] as const;
+    const q = new Player();
+    q.setPosition(new THREE.Vector3(0, 0, 0));
+    expect(q.test(...over)).not.toBeNull();
+    move(q, DT, { crouch: true });
+    move(q, 0.5);
+    expect(q.test(...over)).toBeNull();
   });
 });

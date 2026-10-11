@@ -19,8 +19,8 @@ export const CONFIG = {
      * Base low-res size; 
      * actual size = window / largest integer factor that fits this base.
      * */
-    baseWidth: 320 * 1.5,
-    baseHeight: 180 * 1.5,
+    baseWidth: 320,
+    baseHeight: 180    ,
     /** World units covered by one low-res pixel (constant zoom regardless of window size). */
     unitsPerPixel: 1 / 11,
     pixelate: true,
@@ -80,6 +80,24 @@ export const CONFIG = {
     respawnTime: 3.5,
     /** The gun goes back in the holster after this long without shooting (s). */
     autoHolsterTime: 30,
+    /** Crouching (C): slower, steadier, smaller. */
+    crouch: {
+      speedMul: 0.5,
+      /** Spread × this while crouched and still… */
+      spreadMul: 0.6,
+      /** …and while crouch-walking (instead of the walking penalty). */
+      movingSpreadMul: 0.8,
+      /** Hitbox height × this when fully crouched. */
+      hitboxScale: 0.6,
+      /** Seconds to blend between standing and crouched. */
+      blendTime: 0.2,
+      /** Standing height checked overhead before getting up. */
+      standHeight: 1.85,
+    },
+    /** How much lower the shoulders are when fully crouched. */
+    crouchDrop: 0.35,
+    /** Top of a crouched body (overhead check from here up to crouch.standHeight). */
+    standHeightCrouched: 1.15,
     /** Weapon spread multipliers (the weapon's own spread is the standing-still value). */
     spreadMovingMul: 2.75,
     spreadMountedMul: 4.5,

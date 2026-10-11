@@ -12,7 +12,7 @@ import { PlayerModel } from './PlayerModel';
 import type { HitInfo, Target } from './Targets';
 import { WeaponState, type ShotRequest } from './Weapon';
 import { muzzleOffset } from './WeaponModel';
-import { dirToYaw, moveToward, yawToX, yawToZ } from '../util/math';
+import { dirToYaw, lerp, moveToward, yawToX, yawToZ } from '../util/math';
 
 export interface PlayerInput {
   /** World-space desired direction on XZ (normalized) or null. */
@@ -25,6 +25,8 @@ export interface PlayerInput {
   holster: boolean;
   /** Weapon slot key pressed this step (0-2), or null. */
   select: number | null;
+  /** Crouch key (C) pressed this step. */
+  crouch?: boolean;
   /** Aim point in world space: the surface under the crosshair. */
   aim: THREE.Vector3;
 }
@@ -150,12 +152,25 @@ export class Player implements Target {
   /** Movement on foot. When mounted the Game moves the player with the horse. */
   updateMovement(dt: number, input: PlayerInput, world: CollisionWorld, dynamic: readonly CircleCollider[]): void {
     this.prevPos.copy(this.pos);
-    if (this.mounted) return;
+    if (this.mounted) {
+      // No crouching in the saddle.
+      this.crouched = false;
+      this.crouch = 0;
+      return;
+    }
     if (this.dead) input = { ...input, moveX: 0, moveZ: 0 };
     const pc = CONFIG.player;
     const hasInput = input.moveX !== 0 || input.moveZ !== 0;
-    this.sprinting = hasInput && input.sprint;
-    const max = this.sprinting ? pc.sprintSpeed : pc.walkSpeed;
+    // C toggles; Shift while crouched stands you up into a sprint (unless something is overhead).
+    if (input.crouch && !this.dead) {
+      if (!this.crouched) this.crouched = true;
+      else this.tryStand(world);
+    } else if (input.sprint && this.crouched) {
+      this.tryStand(world);
+    }
+    this.crouch = moveToward(this.crouch, this.crouched ? 1 : 0, dt / pc.crouch.blendTime);
+    this.sprinting = hasInput && input.sprint && !this.crouched;
+    const max = (this.sprinting ? pc.sprintSpeed : pc.walkSpeed) * (this.crouched ? pc.crouch.speedMul : 1);
     const tx = input.moveX * max;
     const tz = input.moveZ * max;
     const rate = (hasInput ? pc.acceleration : pc.deceleration) * dt;
@@ -178,6 +193,24 @@ export class Player implements Target {
       if (vn < 0) this.vel.set(this.vel.x - vn * c.nx, this.vel.y - vn * c.nz);
     }
     if (this.vel.lengthSq() > 0.04) this.moveYaw = dirToYaw(this.vel.x, this.vel.y);
+  }
+
+  /** Crouching (toggled), and the 0..1 blend between standing and crouched poses / effects. */
+  crouched = false;
+  crouch = 0;
+
+  /** Stand up unless something overhead is in the way. Returns whether we're standing. */
+  tryStand(world: CollisionWorld): boolean {
+    const c = CONFIG.player;
+    if (world.blocksStanding(this.pos.x, this.pos.z, c.radius, c.standHeightCrouched, c.crouch.standHeight)) return false;
+    this.crouched = false;
+    return true;
+  }
+
+  /** Mounting / dying: back to standing at once. */
+  cancelCrouch(): void {
+    this.crouched = false;
+    this.crouch = 0;
   }
 
   /** Aim, switch, reload and fire. Returns a shot when the weapon fires this step. */
@@ -247,7 +280,8 @@ export class Player implements Target {
     }
 
     // Muzzle in world space, computed from the logical pose (right hand, shoulder height).
-    const muzzleH = this.mounted ? 2.34 : 1.38; // shoulder height of the gun arm (see PlayerModel/HorseModel)
+    // Shoulder height of the gun arm (see PlayerModel/HorseModel); lower when crouched.
+    const muzzleH = this.mounted ? 2.34 : 1.38 - CONFIG.player.crouchDrop * this.crouch;
     const fx = yawToX(this.aimYaw);
     const fz = yawToZ(this.aimYaw);
     // The gun arm sits on the model's local +X, which is (fz, -fx) in world space.
@@ -262,8 +296,10 @@ export class Player implements Target {
 
     const pc = CONFIG.player;
     let spreadMul = 1;
+    const moving = this.speed() > 0.5;
     if (this.mounted) spreadMul = pc.spreadMountedMul + this.mountSpeed * pc.spreadMountedPerSpeed;
-    else if (this.speed() > 0.5) spreadMul = pc.spreadMovingMul;
+    // Crouched: steadier (×0.6 still, ×0.8 crouch-walking instead of the walking penalty).
+    else spreadMul = lerp(moving ? pc.spreadMovingMul : 1, moving ? pc.crouch.movingSpreadMul : pc.crouch.spreadMul, this.crouch);
     const shot = weapon.fire(origin, input.aim, spreadMul, this.aimYaw);
     if (shot) {
       this.recoil = 1;
@@ -294,7 +330,8 @@ export class Player implements Target {
 
   test(a: THREE.Vector3, b: THREE.Vector3): { t: number; normal: THREE.Vector3 } | null {
     if (this.dead) return null;
-    const [y0, y1] = this.mounted ? [1.0, 2.95] : [0, 1.85];
+    // Crouching shrinks the hitbox (lower profile).
+    const [y0, y1] = this.mounted ? [1.0, 2.95] : [0, 1.85 * lerp(1, CONFIG.player.crouch.hitboxScale, this.crouch)];
     const h = segmentVsCylinder(a.x, a.y, a.z, b.x, b.y, b.z, this.pos.x, this.pos.z, 0.38, y0, y1);
     return h ? { t: h.t, normal: new THREE.Vector3(h.nx, h.ny, h.nz) } : null;
   }
@@ -377,6 +414,7 @@ export class Player implements Target {
       dead: this.dead,
       draw: this.draw,
       active: this.weapon ? this.active : null,
+      crouch: this.crouch,
       longGun: def?.look.kind === 'longgun',
     });
   }

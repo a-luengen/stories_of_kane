@@ -10,7 +10,15 @@ export interface WeaponBarState {
   /** 0..1 or -1. */
   reloadProgress: number;
   noAmmo: boolean;
+  /** Stance icon next to the slots (null when riding). */
+  stance: 'stand' | 'crouch' | null;
 }
+
+/** Tiny stance figures: hat, head, body, legs ('#' = figure). */
+const STANCE: Record<'stand' | 'crouch', string[]> = {
+  stand: ['.###.', '#####', '.##..', '.###.', '#####', '#.#.#', '..#..', '.#.#.', '.#.#.', '.#.#.', '##.##'],
+  crouch: ['.###..', '#####.', '.##...', '.###..', '######', '.##.#.', '.###..', '#..#..', '##.##.'],
+};
 
 export const SLOT_W = 36;
 export const SLOT_H = 18;
@@ -30,6 +38,21 @@ export function drawWeaponBar(ctx: CanvasRenderingContext2D, x: number, y: numbe
     if (slot.icon) drawIconFit(ctx, slot.icon, sx + 1, y + 1, SLOT_W - 2, SLOT_H - 2, false, slot.selected ? 1 : 0.6);
     drawText(ctx, String(i + 1), sx + 2, y + 2, slot.selected ? UI.brassLight : UI.cream, UI.ink);
   });
+
+  if (s.stance) {
+    const bx = x + 3 * (SLOT_W + 2);
+    ctx.fillStyle = 'rgba(31,21,16,0.6)';
+    ctx.fillRect(bx, y, 12, SLOT_H);
+    const rows = STANCE[s.stance];
+    const oy = y + SLOT_H - 2 - rows.length;
+    rows.forEach((row, j) => {
+      for (let i = 0; i < row.length; i++) {
+        if (row[i] !== '#') continue;
+        ctx.fillStyle = s.stance === 'crouch' ? UI.brassLight : UI.cream;
+        ctx.fillRect(bx + 3 + i, oy + j, 1, 1);
+      }
+    });
+  }
 
   // Ammo: loaded / magazine | reserve.
   if (s.ammo) {

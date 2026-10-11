@@ -26,6 +26,8 @@ export interface PlayerView {
   readonly pos: THREE.Vector3;
   readonly mounted: boolean;
   readonly dead: boolean;
+  /** 0 = standing … 1 = crouched (lower chest). */
+  readonly crouch?: number;
 }
 
 export interface NpcContext {
@@ -48,7 +50,8 @@ export function randomName(body: 'male' | 'female'): string {
 
 /** Player chest point (what NPCs aim at and look for). */
 export function playerChest(p: PlayerView, out = new THREE.Vector3()): THREE.Vector3 {
-  return out.set(p.pos.x, p.mounted ? 2.2 : CONFIG.npc.chestHeight, p.pos.z);
+  const h = p.mounted ? 2.2 : CONFIG.npc.chestHeight * (1 - (1 - CONFIG.player.crouch.hitboxScale) * (p.crouch ?? 0));
+  return out.set(p.pos.x, h, p.pos.z);
 }
 
 /** A townsperson: routine, conversation, and a provocation-driven combat / flee state machine. */

@@ -142,7 +142,7 @@ export class Hud {
       drawText(ctx, s.prompt, x, y, C.cream);
     }
 
-    if (!s.pixelate) drawText(ctx, 'PIXEL OFF [P]', W - textWidth('PIXEL OFF [P]') - 4, 4, C.cream, C.ink);
+    if (!s.pixelate) drawText(ctx, 'PIXEL OFF [P]', W - textWidth('PIXEL OFF [P]') - 4, H - 10, C.cream, C.ink);
 
     if (s.cursorX !== null && s.cursorY !== null && !s.menuOpen) this.crosshair(s.cursorX, s.cursorY, s.weaponBar.reloadProgress >= 0);
   }

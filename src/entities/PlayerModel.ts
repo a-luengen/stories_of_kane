@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { AppearanceConfig, WeaponDef } from '../data/types';
 import { CharacterRig } from '../render/CharacterRig';
-import { angleDelta, clamp, damp, dampAngle, lerp, moveToward } from '../util/math';
+import { CROUCH_LEAN, legTargets, type GaitState } from '../render/HumanGait';
+import { angleDelta, clamp, damp, dampAngle, lerp, moveToward, smoothstep } from '../util/math';
 
 export interface PlayerPose {
   /** Horizontal speed (units/s). */
@@ -23,6 +24,8 @@ export interface PlayerPose {
   draw: number;
   /** Weapon slot being drawn / held, or null. */
   active: number | null;
+  /** 0 = standing … 1 = crouched. */
+  crouch: number;
   /** The active weapon is a two-handed long gun. */
   longGun: boolean;
 }
@@ -39,7 +42,6 @@ export class PlayerModel {
   private time = 0;
   private hipsYaw = 0;
   private upperYaw = 0;
-  private bob = 0;
   private fall = 0;
 
   constructor(appearance: AppearanceConfig) {
@@ -60,7 +62,7 @@ export class PlayerModel {
 
   animate(dt: number, p: PlayerPose): void {
     this.time += dt;
-    const { hips, upper, head, legL, legR, armL, armR } = this.rig;
+    const { hips, upper, head, armL, armR } = this.rig;
     const moving = p.speed > 0.3;
 
     if (p.mounted) {
@@ -71,10 +73,9 @@ export class PlayerModel {
       this.upperYaw = p.draw > 0.5 ? aimRel : clamp(aimRel, -0.6, 0.6);
       hips.rotation.y = 0;
       upper.rotation.y = this.upperYaw;
-      // Straddle: thighs forward/outward, boots down along the flanks.
-      legL.rotation.set(-0.45, 0, -0.42);
-      legR.rotation.set(-0.45, 0, 0.42);
-      hips.position.y = upper.position.y = 0.88;
+      // Straddle: thighs forward/outward, shins down along the flanks.
+      this.rig.poseLegs(legTargets({ ...this.gait(0, 0, p), mounted: true }), dt);
+      this.rig.placePelvis(0.88, 0);
       upper.rotation.x = 0;
     } else {
       // Backpedal when aiming far away from the movement direction.
@@ -95,19 +96,16 @@ export class PlayerModel {
       hips.rotation.y = this.hipsYaw;
       upper.rotation.y = this.upperYaw;
 
-      // Walk cycle.
-      const stride = p.sprint ? 1.25 : 0.95;
-      if (moving) this.phase += dt * p.speed * (p.sprint ? 2.0 : 2.4) * dir;
-      const amp = moving ? clamp(p.speed / 4, 0.4, 1) * (p.sprint ? 0.9 : 0.65) : 0;
-      const swing = Math.sin(this.phase * stride) * amp;
-      legL.rotation.set(damp(legL.rotation.x, swing, 20, dt), 0, 0);
-      legR.rotation.set(damp(legR.rotation.x, -swing, 20, dt), 0, 0);
-
-      const targetBob = moving ? Math.abs(Math.cos(this.phase * stride)) * 0.06 * amp : Math.sin(this.time * 2.2) * 0.012;
-      this.bob = damp(this.bob, targetBob, 20, dt);
-      hips.position.y = 0.88 + this.bob;
-      upper.position.y = 0.88 + this.bob;
-      upper.rotation.x = moving ? (p.sprint ? 0.12 : 0.05) : 0;
+      // Gait: knees flex in the swing, feet flat in stance; the planted foot sets the hip height
+      // (that's the bob). Sprinting lifts the knees higher with a longer stride.
+      if (moving) this.phase += dt * p.speed * (p.sprint ? 1.9 : 2.3) * dir;
+      this.stride = damp(this.stride, moving ? clamp(p.speed / 4.3, 0.35, 1) : 0, 8, dt);
+      this.run = damp(this.run, p.sprint && moving ? 1 : 0, 6, dt);
+      const pelvis = this.rig.poseLegs(legTargets(this.gait(this.stride, this.run, p)), dt);
+      this.rig.placePelvis(pelvis, p.crouch);
+      // Crouched: torso a little forward, weapon held ready (aiming is unaffected).
+      // Crouched: the torso folds forward over the feet (the arms and head level out the aim).
+      upper.rotation.x = (moving ? lerp(0.05, 0.14, this.run) : 0) + CROUCH_LEAN * p.crouch;
     }
 
     // Active weapon in the hand from the middle of the draw on; everything else stowed.
@@ -131,7 +129,7 @@ export class PlayerModel {
       gun.rotation.z = 0;
     }
     if (p.draw < 1) {
-      const rest = p.mounted ? -0.3 : legL.rotation.x * 0.6 - 0.1;
+      const rest = p.mounted ? -0.3 : this.legSwing(p) * 0.6 - 0.1;
       const [reachPitch, reachRoll] = p.longGun ? [-2.7, 0.35] : [0.3, 0.12];
       const t = p.draw;
       if (t < 0.5) {
@@ -144,6 +142,9 @@ export class PlayerModel {
       armYaw *= Math.max(0, t * 2 - 1);
     }
     const drawing = p.draw > 0 && p.draw < 1;
+    // Arms hang from the leaning torso: take the crouch lean back out of the aim.
+    const lean = p.mounted ? 0 : CROUCH_LEAN * p.crouch;
+    if (p.draw > 0.5) armPitch -= lean;
     armR.rotation.x = damp(armR.rotation.x, armPitch, reloading ? 14 : drawing ? 24 : 40, dt);
     armR.rotation.z = damp(armR.rotation.z, armRoll, 14, dt);
     armR.rotation.y = armYaw;
@@ -151,20 +152,38 @@ export class PlayerModel {
 
     // Free arm swings, or supports the forestock of a drawn long gun.
     const support = p.longGun && !reloading ? Math.max(0, p.draw * 2 - 1) : 0;
-    const freeArm = reloading ? -0.9 : p.mounted ? -0.5 : -legL.rotation.x * 0.6 - 0.1;
-    armL.rotation.x = damp(armL.rotation.x, lerp(freeArm, -Math.PI / 2 + 0.15, support), 14, dt);
+    const freeArm = reloading ? -0.9 : p.mounted ? -0.5 : -this.legSwing(p) * 0.6 - 0.1;
+    armL.rotation.x = damp(armL.rotation.x, lerp(freeArm, -Math.PI / 2 + 0.15 - lean, support), 14, dt);
     armL.rotation.y = damp(armL.rotation.y, 0.55 * support, 14, dt);
     armL.rotation.z = damp(armL.rotation.z, reloading ? -0.4 : -0.08 * (1 - support), 14, dt);
-    head.rotation.x = -p.recoil * 0.1;
+    head.rotation.x = -p.recoil * 0.1 - lean * 0.8;
     // The head turns the rest of the way to the aim (when holstered the torso only half-follows).
     const aimRel = p.mounted ? angleDelta(p.horseYaw, p.aimYaw) : p.aimYaw;
     head.rotation.y = damp(head.rotation.y, clamp(angleDelta(this.upperYaw, aimRel), -0.7, 0.7), 10, dt);
 
-    // Fall backwards (about the facing's right axis, pivoting at the feet).
-    this.fall = moveToward(this.fall, p.dead ? 1 : 0, dt * (p.dead ? 2.4 : 6));
-    const k = this.fall * this.fall;
+    // Death: the knees buckle first, then the body tips over backwards (about the facing's right
+    // axis, pivoting at the feet); lying down, the legs relax half straight.
+    this.fall = moveToward(this.fall, p.dead ? 1 : 0, dt * (p.dead ? 1.6 : 6));
+    const k = smoothstep(0.3, 1, this.fall) ** 2;
     this.rig.body.quaternion.setFromAxisAngle(this.fallAxis.set(Math.cos(this.upperYaw), 0, -Math.sin(this.upperYaw)), -k * 1.5);
     this.rig.body.position.y = k * 0.14;
+  }
+
+  /** Death buckle: knees give way first, then relax once lying down. */
+  private get buckle(): number {
+    return this.fall < 0.6 ? smoothstep(0, 0.35, this.fall) : lerp(1, 0.35, (this.fall - 0.6) / 0.4);
+  }
+
+  private gait(stride: number, run: number, p: PlayerPose): GaitState {
+    return { phase: this.phase, stride, run, crouch: p.crouch, time: this.time, buckle: p.dead || this.fall > 0 ? this.buckle : 0, mounted: false, crossed: false };
+  }
+
+  private stride = 0;
+  private run = 0;
+
+  /** The left thigh's swing about its crouch / stand base (drives the arm swing). */
+  private legSwing(p: PlayerPose): number {
+    return this.rig.legL.rotation.x + 1.15 * p.crouch;
   }
 
   private fallAxis = new THREE.Vector3();

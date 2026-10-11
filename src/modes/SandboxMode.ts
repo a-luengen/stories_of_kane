@@ -24,7 +24,7 @@ export class SandboxMode implements GameMode {
         map: buildSandboxMap,
         npcs: NPCS,
         regen: true,
-        tutorial: 'WASD MOVE  CLICK SHOOT  R RELOAD  1-3 WEAPONS  E USE  I INVENTORY',
+        tutorial: 'WASD MOVE  CLICK SHOOT  R RELOAD  C CROUCH  1-3 WEAPONS  E USE  I INVENTORY',
       },
       {
         onPlayerDeath: () => this.onPlayerDeath(),

@@ -1,11 +1,17 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config';
-import { WEAPONS } from '../data/weapons';
+import { PLAYER_APPEARANCE, PLAYER_START } from '../data/player';
+import { EQUIP_SLOTS, type AppearanceConfig, type WeaponDef } from '../data/types';
+import { Equipment, weaponKey } from '../items/Equipment';
+import { GridContainer } from '../items/GridContainer';
+import { itemDef, weaponOf } from '../items/ItemDef';
+import { createItem, type ItemInstance } from '../items/ItemInstance';
 import { segmentVsCylinder, type CollisionWorld, type CircleCollider } from '../world/Colliders';
 import type { BurstKind } from './Particles';
 import { PlayerModel } from './PlayerModel';
 import type { HitInfo, Target } from './Targets';
 import { WeaponState, type ShotRequest } from './Weapon';
+import { muzzleOffset } from './WeaponModel';
 import { dirToYaw, moveToward, yawToX, yawToZ } from '../util/math';
 
 export interface PlayerInput {
@@ -17,13 +23,28 @@ export interface PlayerInput {
   reload: boolean;
   /** Put the weapon away. */
   holster: boolean;
+  /** Weapon slot key pressed this step (0-2), or null. */
+  select: number | null;
   /** Aim point in world space: the surface under the crosshair. */
   aim: THREE.Vector3;
 }
 
 export class Player implements Target {
-  readonly model = new PlayerModel();
-  readonly weapon = new WeaponState(WEAPONS.revolver);
+  readonly model: PlayerModel;
+  readonly inventory = new GridContainer(CONFIG.items.playerGrid.w, CONFIG.items.playerGrid.h);
+  readonly equipment = new Equipment();
+  /** Body traits; clothing comes from the equipment. */
+  private readonly look: Omit<AppearanceConfig, 'clothing'>;
+  private seenVersion = -1;
+  /** Selected weapon slot (drawn, or what a trigger pull draws), or null for none. */
+  active: number | null = 0;
+  /** Slot to draw once the current weapon is holstered (switching). */
+  private pending: number | null = null;
+  private swapping = false;
+  private activeItem: ItemInstance | null = null;
+  private states = new WeakMap<ItemInstance, WeaponState>();
+  /** Seconds left to show "No ammo". */
+  noAmmo = 0;
   readonly pos = new THREE.Vector3();
   readonly prevPos = new THREE.Vector3();
   readonly vel = new THREE.Vector2();
@@ -34,9 +55,6 @@ export class Player implements Target {
   recoil = 0;
   /** 0 = holstered, 1 = drawn; in between plays the draw (or holster). */
   draw = 0;
-  private drawTarget = 0;
-  /** Seconds since the last shot (or draw), for auto-holstering. */
-  private idle = 0;
   hp = CONFIG.player.maxHp;
   dead = false;
   /** 1 right after taking damage, fades to 0 (HUD flash). */
@@ -48,17 +66,68 @@ export class Player implements Target {
   mountSpeed = 0;
   mountYaw = 0;
 
+  constructor() {
+    const { clothing, ...look } = PLAYER_APPEARANCE;
+    this.look = look;
+    this.model = new PlayerModel(PLAYER_APPEARANCE);
+    for (const s of EQUIP_SLOTS) {
+      const id = clothing[s];
+      if (id) this.equipment.put(s, createItem(id), null);
+    }
+    PLAYER_START.weapons.forEach((id, i) => id && this.equipment.put(weaponKey(i), createItem(id), null));
+    // Each grant is its own stack (two boxes stay two boxes).
+    for (const g of PLAYER_START.grid) this.inventory.placeAnywhere(createItem(g.item, g.quantity ?? itemDef(g.item).boxQuantity ?? 1));
+    this.syncEquipment();
+  }
+
   get object(): THREE.Object3D {
     return this.model.root;
   }
 
+  /** State of the weapon in the active slot (null when the slot is empty / none selected). */
+  get weapon(): WeaponState | null {
+    const item = this.active !== null ? this.equipment.weapons[this.active] : null;
+    return item ? this.stateFor(item) : null;
+  }
+
+  stateFor(item: ItemInstance): WeaponState {
+    let s = this.states.get(item);
+    if (!s) {
+      s = new WeaponState(weaponOf(itemDef(item.defId))!, item, this.inventory);
+      this.states.set(item, s);
+    }
+    return s;
+  }
+
   get ammo(): number {
-    return this.weapon.ammo;
+    return this.weapon?.ammo ?? 0;
   }
 
   /** 0..1 reload progress or -1. */
   get reloadProgress(): number {
-    return this.weapon.reloadProgress;
+    return this.weapon?.reloadProgress ?? -1;
+  }
+
+  appearance(): AppearanceConfig {
+    return this.equipment.appearance(this.look);
+  }
+
+  /**
+   * React to equipment changes (inventory UI, looting, dropping): rebuild the look, and holster
+   * at once if the active weapon was removed or replaced.
+   */
+  syncEquipment(): void {
+    if (this.equipment.version === this.seenVersion) return;
+    this.seenVersion = this.equipment.version;
+    this.model.setAppearance(this.appearance());
+    this.model.setWeapons(this.equipment.weaponDefs());
+    const item = this.active !== null ? this.equipment.weapons[this.active] : null;
+    if (item !== this.activeItem) {
+      if (this.activeItem) this.states.get(this.activeItem)?.cancelReload();
+      this.activeItem = item;
+      this.holster(true);
+      this.pending = null;
+    }
   }
 
   speed(): number {
@@ -103,30 +172,71 @@ export class Player implements Target {
     if (this.vel.lengthSq() > 0.04) this.moveYaw = dirToYaw(this.vel.x, this.vel.y);
   }
 
-  /** Aim, reload and fire. Returns a shot when the weapon fires this step. */
+  /** Aim, switch, reload and fire. Returns a shot when the weapon fires this step. */
   updateWeapon(dt: number, input: PlayerInput): ShotRequest | null {
+    this.syncEquipment();
     const ax = input.aim.x - this.pos.x;
     const az = input.aim.z - this.pos.z;
     if (ax * ax + az * az > 0.01) this.aimYaw = dirToYaw(ax, az);
-
-    this.weapon.update(dt);
     this.recoil = moveToward(this.recoil, 0, dt * 5);
+    this.noAmmo = Math.max(0, this.noAmmo - dt);
+    const slots = this.equipment.weapons;
+
+    // Slot keys: the active slot again holsters, another (non-empty) slot switches.
+    if (input.select !== null && slots[input.select]) {
+      if (input.select === this.active && this.drawTarget === 1 && this.pending === null) {
+        this.holster(); // stays selected: the next trigger pull draws it again
+      } else if (input.select !== this.active || this.drawTarget === 0) {
+        this.weapon?.cancelReload();
+        this.swapping = true;
+        if (this.draw > 0 && input.select !== this.active) {
+          this.pending = input.select;
+          this.drawTarget = 0;
+        } else {
+          this.active = input.select;
+          this.drawTarget = 1;
+        }
+        this.idle = 0;
+      }
+    }
 
     // Holster on request or after a while without shooting; shooting or reloading draws again.
     this.idle += dt;
     if (input.holster || (this.drawTarget === 1 && this.idle >= CONFIG.player.autoHolsterTime)) this.holster();
-    else if ((input.fireHeld || input.reload) && this.drawTarget === 0) {
-      this.drawTarget = 1;
-      this.idle = 0;
+    else if ((input.fireHeld || input.reload) && this.drawTarget === 0 && this.pending === null) {
+      if (this.active === null || !slots[this.active]) this.active = slots.findIndex((w) => w !== null);
+      if (this.active < 0) this.active = null;
+      if (this.active !== null) {
+        this.drawTarget = 1;
+        this.idle = 0;
+      }
     }
-    this.draw = moveToward(this.draw, this.drawTarget, dt / this.weapon.def.drawTime);
+
+    // Draw / holster animation; a switch holsters, swaps, then draws (quicker than a plain draw).
+    const weapon = this.weapon;
+    const drawTime = this.swapping ? CONFIG.items.weaponSwapTime / 2 : (weapon?.def.drawTime ?? 0.4);
+    this.draw = moveToward(this.draw, this.drawTarget, dt / drawTime);
+    if (this.draw === 0 && this.pending !== null) {
+      this.active = this.pending;
+      this.pending = null;
+      this.drawTarget = 1;
+    }
+    if (this.draw === 1 || this.drawTarget === 0) this.swapping = this.pending !== null;
+    this.activeItem = this.active !== null ? slots[this.active] : null;
+    if (!weapon) return null;
+    weapon.update(dt);
+
     if (input.reload) this.reloadQueued = true;
     if (this.draw < 1) return null;
     if (this.reloadQueued) {
-      this.weapon.startReload();
       this.reloadQueued = false;
+      if (!weapon.startReload() && weapon.ammo < weapon.def.magazine && weapon.reserve <= 0) this.noAmmo = 1.5;
     }
     if (!input.fireHeld) return null;
+    if (weapon.ammo <= 0 && weapon.reserve <= 0) {
+      if (input.fireHeld) this.noAmmo = 1.5;
+      return null;
+    }
 
     // Muzzle in world space, computed from the logical pose (right hand, shoulder height).
     const muzzleH = this.mounted ? 2.34 : 1.38; // shoulder height of the gun arm (see PlayerModel/HorseModel)
@@ -135,17 +245,18 @@ export class Player implements Target {
     // The gun arm sits on the model's local +X, which is (fz, -fx) in world space.
     const sx = fz;
     const sz = -fx;
+    const reach = 0.4 + muzzleOffset(weapon.def.look);
     const origin = new THREE.Vector3(
-      this.pos.x + fx * 0.75 + sx * 0.18,
+      this.pos.x + fx * reach + sx * 0.18,
       this.pos.y + muzzleH,
-      this.pos.z + fz * 0.75 + sz * 0.18,
+      this.pos.z + fz * reach + sz * 0.18,
     );
 
     const pc = CONFIG.player;
     let spreadMul = 1;
     if (this.mounted) spreadMul = pc.spreadMountedMul + this.mountSpeed * pc.spreadMountedPerSpeed;
     else if (this.speed() > 0.5) spreadMul = pc.spreadMovingMul;
-    const shot = this.weapon.fire(origin, input.aim, spreadMul, this.aimYaw);
+    const shot = weapon.fire(origin, input.aim, spreadMul, this.aimYaw);
     if (shot) {
       this.recoil = 1;
       this.idle = 0;
@@ -160,12 +271,16 @@ export class Player implements Target {
   /** Put the gun away (cancels a reload in progress). `instant` skips the animation. */
   holster(instant = false): void {
     this.drawTarget = 0;
+    this.pending = null;
     this.reloadQueued = false;
-    this.weapon.cancelReload();
+    this.weapon?.cancelReload();
     if (instant) this.draw = 0;
   }
 
   private reloadQueued = false;
+  private drawTarget = 0;
+  /** Seconds since the last shot (or draw), for auto-holstering. */
+  private idle = 0;
 
   // ---------------------------------------------------------------- Target (hitbox)
 
@@ -193,16 +308,17 @@ export class Player implements Target {
     if (this.sinceHurt > pc.regenDelay) this.hp = Math.min(pc.maxHp, this.hp + pc.regenRate * dt);
   }
 
-  /** Back on your feet with full health and a full gun. */
+  /** Back on your feet with full health (inventory and loaded rounds are kept). */
   revive(p: THREE.Vector3): void {
     this.dead = false;
     this.hp = CONFIG.player.maxHp;
-    this.weapon.refill();
     this.vel.set(0, 0);
     this.setPosition(p);
   }
 
   animate(dt: number): void {
+    this.syncEquipment();
+    const def: WeaponDef | null = this.weapon?.def ?? null;
     this.model.animate(dt, {
       speed: this.mounted ? 0 : this.speed(),
       sprint: this.sprinting,
@@ -214,6 +330,8 @@ export class Player implements Target {
       horseYaw: this.mountYaw,
       dead: this.dead,
       draw: this.draw,
+      active: this.weapon ? this.active : null,
+      longGun: def?.look.kind === 'longgun',
     });
   }
 }

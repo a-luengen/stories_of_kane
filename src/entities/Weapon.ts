@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import type { WeaponDef } from '../data/types';
+import type { AmmoSource } from '../items/GridContainer';
+import type { ItemInstance } from '../items/ItemInstance';
 import { clamp, yawToX, yawToZ } from '../util/math';
 
 export interface ShotRequest {
@@ -59,13 +61,36 @@ export function scatterDir(
 
 /** Ammo, fire-rate and reload state of one carried weapon. */
 export class WeaponState {
-  ammo: number;
   private cooldown = 0;
   /** Remaining reload time, 0 when not reloading. */
   reloadLeft = 0;
+  private looseAmmo: number;
 
-  constructor(readonly def: WeaponDef) {
-    this.ammo = def.magazine;
+  /**
+   * @param item  the weapon item; its `loadedRounds` is the magazine (kept when the item moves)
+   * @param source  where reloads take rounds from (an inventory); null = unlimited
+   */
+  constructor(
+    readonly def: WeaponDef,
+    readonly item: ItemInstance | null = null,
+    public source: AmmoSource | null = null,
+  ) {
+    this.looseAmmo = def.magazine;
+  }
+
+  /** Rounds in the magazine. */
+  get ammo(): number {
+    return this.item ? (this.item.loadedRounds ?? 0) : this.looseAmmo;
+  }
+
+  set ammo(v: number) {
+    if (this.item) this.item.loadedRounds = v;
+    else this.looseAmmo = v;
+  }
+
+  /** Rounds available to reload from. */
+  get reserve(): number {
+    return this.source ? this.source.ammoCount(this.def.ammoType) : Infinity;
   }
 
   get reloading(): boolean {
@@ -81,19 +106,28 @@ export class WeaponState {
     return this.cooldown <= 0 && !this.reloading && this.ammo > 0;
   }
 
+  /** Empty with nothing to reload. */
+  get dry(): boolean {
+    return this.ammo <= 0 && this.reserve <= 0;
+  }
+
   update(dt: number): void {
     this.cooldown = Math.max(0, this.cooldown - dt);
     if (this.reloading) {
       this.reloadLeft -= dt;
       if (this.reloadLeft <= 0) {
         this.reloadLeft = 0;
-        this.ammo = this.def.magazine;
+        const need = this.def.magazine - this.ammo;
+        this.ammo += this.source ? this.source.takeAmmo(this.def.ammoType, need) : need;
       }
     }
   }
 
-  startReload(): void {
-    if (!this.reloading && this.ammo < this.def.magazine) this.reloadLeft = this.def.reloadTime;
+  /** Start reloading. False if full, already reloading, or there are no rounds to load. */
+  startReload(): boolean {
+    if (this.reloading || this.ammo >= this.def.magazine || this.reserve <= 0) return false;
+    this.reloadLeft = this.def.reloadTime;
+    return true;
   }
 
   cancelReload(): void {

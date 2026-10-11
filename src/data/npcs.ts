@@ -2,28 +2,32 @@ import { PAL } from '../render/palette';
 import type { NpcDef, NpcLines } from './types';
 
 /**
- * NPCs on the sandbox map. To add one, append an entry: outfit and weapon are plain data
- * (`weapon` takes an id from WEAPONS or a full inline WeaponDef).
+ * NPCs on the sandbox map. To add one, append an entry: appearance and weapon are plain data
+ * (`appearance.clothing` takes ids from the ClothingRegistry in data/clothing.ts, `weapon` an id
+ * from WEAPONS or a full inline WeaponDef, `inventory` optional item ids from data/items.ts).
  */
 export const NPCS: NpcDef[] = [
   {
     id: 'porch-gunman',
     attitude: 'friendly',
     defendsOthers: true,
-    outfit: {
+    appearance: {
       body: 'male',
       skin: PAL.skin,
       hair: PAL.darkBrown,
       hairStyle: 'short',
       beard: PAL.brown,
-      shirt: PAL.cream,
-      trousers: PAL.denim,
-      boots: PAL.darkBrown,
-      over: { kind: 'vest', color: PAL.brown },
-      hat: { kind: 'cowboy', color: PAL.woodPale, band: PAL.darkBrown },
+      clothing: {
+        hat: 'cowboy_hat_tan',
+        top: 'shirt_cream',
+        outerwear: 'vest_brown',
+        legs: 'trousers_denim',
+        boots: 'boots_brown',
+        belt: 'belt_leather',
+        holster: 'holster_leather',
+      },
     },
     weapon: 'revolver',
-    holster: true,
     spawn: [0.45, -4.25],
     // Leaning on the left porch post of the store across the street from the spawn.
     routine: { kind: 'lean', at: [0.45, -4.25], facing: 0 },
@@ -32,19 +36,14 @@ export const NPCS: NpcDef[] = [
     id: 'townswoman',
     attitude: 'friendly',
     defendsOthers: false,
-    outfit: {
+    appearance: {
       body: 'female',
       skin: PAL.skin,
       hair: PAL.woodLight,
       hairStyle: 'bun',
-      shirt: PAL.cream,
-      trousers: PAL.cream,
-      boots: PAL.darkBrown,
-      dress: { color: PAL.skyDeep, trim: PAL.cream },
-      hat: { kind: 'bonnet', color: PAL.cream, band: PAL.skyDeep },
+      clothing: { hat: 'bonnet_cream', legs: 'dress_blue', boots: 'boots_brown' },
     },
     weapon: null,
-    holster: false,
     spawn: [4, -3.2],
     routine: {
       kind: 'wander',
@@ -57,19 +56,14 @@ export const NPCS: NpcDef[] = [
     id: 'fence-rifle',
     attitude: 'neutral',
     defendsOthers: false,
-    outfit: {
+    appearance: {
       body: 'female',
       skin: PAL.skinDark,
       hair: PAL.ink,
       hairStyle: 'long',
-      shirt: PAL.rustLight,
-      trousers: PAL.brown,
-      boots: PAL.ink,
-      over: { kind: 'duster', color: PAL.sandDark },
-      hat: { kind: 'cowboy', color: PAL.darkBrown, band: PAL.red },
+      clothing: { hat: 'cowboy_hat_dark', top: 'shirt_rust', outerwear: 'duster_sand', legs: 'trousers_brown', boots: 'boots_black' },
     },
     weapon: 'rifle',
-    holster: false,
     spawn: [-10, 10.6],
     routine: {
       kind: 'wander',
@@ -82,21 +76,15 @@ export const NPCS: NpcDef[] = [
     id: 'edge-patrol',
     attitude: 'neutral',
     defendsOthers: false,
-    outfit: {
+    appearance: {
       body: 'male',
       skin: PAL.skin,
       hair: PAL.ink,
       hairStyle: 'short',
       beard: PAL.ink,
-      shirt: PAL.denim,
-      trousers: PAL.sandDark,
-      boots: PAL.darkBrown,
-      chaps: PAL.wood,
-      bandana: PAL.red,
-      hat: { kind: 'cowboy', color: PAL.ink, band: PAL.brass },
+      clothing: { hat: 'cowboy_hat_black', top: 'shirt_denim', neck: 'bandana_red', legs: 'chaps_wood', boots: 'boots_brown' },
     },
     weapon: 'shotgun',
-    holster: false,
     spawn: [44, 14],
     routine: { kind: 'patrol', points: [[44, 44], [-44, 44], [-44, -44], [44, -44]], pause: 2 },
   },

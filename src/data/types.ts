@@ -36,6 +36,8 @@ export interface WeaponDef {
   falloffMin: number;
   /** Where the weapon sits when not drawn. A 'holster' weapon is held in hand if the owner has no holster. */
   carry: 'holster' | 'back';
+  /** Ammo item type it loads (matches ItemDef.ammoType). */
+  ammoType: string;
   /** Seconds to draw (or put away). */
   drawTime: number;
   /** How NPCs fight with it. */
@@ -52,25 +54,76 @@ export interface WeaponDef {
 
 // ------------------------------------------------------------------------------------ NPCs
 
-export interface Outfit {
+/** Clothing slots on a character. A `fullBody` item (dress) is worn in `legs` and keeps `top` empty. */
+export type EquipSlot = 'hat' | 'top' | 'legs' | 'outerwear' | 'neck' | 'boots' | 'belt' | 'holster';
+export type ClothingSlot = EquipSlot | 'fullBody';
+export const EQUIP_SLOTS: readonly EquipSlot[] = ['hat', 'neck', 'top', 'outerwear', 'legs', 'belt', 'holster', 'boots'];
+
+/** How a clothing piece is built (see render/clothingBuilders). Colours make variants data-only. */
+export type ClothingKind =
+  | 'cowboyHat'
+  | 'bonnet'
+  | 'shirt'
+  | 'vest'
+  | 'duster'
+  | 'poncho'
+  | 'trousers'
+  | 'chaps'
+  | 'dress'
+  | 'bandana'
+  | 'boots'
+  | 'belt'
+  | 'holster';
+
+export interface ClothingDef {
+  id: string;
+  name: string;
+  description: string;
+  slot: ClothingSlot;
+  kind: ClothingKind;
+  color: number;
+  /** Secondary colour (hat band, trim, buckle, trousers under chaps...). */
+  trim?: number;
+}
+
+/** A character's look: body traits plus one clothing id per slot. */
+export interface AppearanceConfig {
   body: 'male' | 'female';
   skin: number;
   hair: number;
   hairStyle: 'short' | 'long' | 'bun';
   /** Stubble / beard colour (omit for clean-shaven). */
   beard?: number;
-  shirt: number;
-  trousers: number;
-  boots: number;
-  /** Worn over the shirt. */
-  over?: { kind: 'vest' | 'duster'; color: number };
-  /** A long dress replaces the trousers visually. */
-  dress?: { color: number; trim?: number };
-  /** Leather chaps over the trousers. */
-  chaps?: number;
-  /** Neckerchief colour. */
-  bandana?: number;
-  hat?: { kind: 'cowboy' | 'bonnet'; color: number; band?: number };
+  clothing: Partial<Record<EquipSlot, string>>;
+}
+
+// ------------------------------------------------------------------------------------ items
+
+export type ItemCategory = 'weapon' | 'ammo' | 'clothing';
+
+export interface ItemDef {
+  id: string;
+  name: string;
+  description: string;
+  category: ItemCategory;
+  /** Footprint in grid cells (unrotated). */
+  size: { w: number; h: number };
+  stackable: boolean;
+  maxStack: number;
+  /** Icon camera tweaks; the icon itself is rendered from the item's procedural mesh. */
+  icon?: { yaw?: number; pitch?: number; tint?: number };
+  /** Links into the owning system. */
+  weaponDefId?: string;
+  ammoType?: string;
+  clothingId?: string;
+  /** Quantity in one "box" when spawned (ammo). */
+  boxQuantity?: number;
+}
+
+/** Inventory entry in NPC data: an item id and optional quantity. */
+export interface ItemGrant {
+  item: string;
+  quantity?: number;
 }
 
 export type Routine =
@@ -98,11 +151,11 @@ export interface NpcDef {
   attitude: 'friendly' | 'neutral';
   /** Also turns hostile when it sees the player shoot another NPC nearby. */
   defendsOthers: boolean;
-  outfit: Outfit;
-  /** A weapon id from WEAPONS, an inline weapon definition, or null for unarmed. */
+  appearance: AppearanceConfig;
+  /** A weapon id from WEAPONS, an inline weapon definition, or null for unarmed. A holster weapon is carried in hand without a holster. */
   weapon: string | WeaponDef | null;
-  /** Wears a gun belt with a holster (a holster weapon without one is carried in hand). */
-  holster: boolean;
+  /** Grid contents. If omitted: 1-2 boxes of ammo for the weapon. */
+  inventory?: ItemGrant[];
   spawn: Vec2;
   routine: Routine;
   hp?: number;

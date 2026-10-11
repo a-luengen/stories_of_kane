@@ -77,6 +77,19 @@ export const CONFIG = {
     spreadMountedPerSpeed: 0.225,
   },
 
+  items: {
+    /** Max rounds per ammo stack, by ammo type. */
+    ammoMaxStack: {
+      revolverAmmo: 50,
+      rifleAmmo: 20,
+      shotgunShells: 12,
+    } as Record<string, number>,
+    playerGrid: { w: 8, h: 4 },
+    npcGrid: { w: 8, h: 4 },
+    /** Holster + draw when switching weapon slots (s, total). */
+    weaponSwapTime: 0.4,
+  },
+
   projectiles: {
     tracerLength: 1.6,
   },

@@ -1,4 +1,5 @@
 import { drawText, textWidth } from './PixelFont';
+import { drawWeaponBar, SLOT_H, SLOT_W, type WeaponBarState } from './WeaponBar';
 
 const C = {
   ink: '#1f1510',
@@ -19,15 +20,17 @@ export interface WorldLabel {
 }
 
 export interface HudState {
-  ammo: number;
-  magazine: number;
+  weaponBar: WeaponBarState;
+  /** Short message in the lower middle ("Inventory full"). */
+  toast: string | null;
+  /** An inventory panel is open: no crosshair (the panel draws its own cursor). */
+  menuOpen: boolean;
   hp: number;
   maxHp: number;
   /** 0..1 damage flash. */
   hurt: number;
   dead: boolean;
   labels: WorldLabel[];
-  reloadProgress: number; // -1 when not reloading
   prompt: string | null;
   /** Crosshair position in low-res pixels (or null when the cursor is outside). */
   cursorX: number | null;
@@ -57,6 +60,11 @@ export class Hud {
     this.canvas.height = lowH;
     Object.assign(this.canvas.style, { width: `${cssW}px`, height: `${cssH}px`, left, top });
     this.ctx.imageSmoothingEnabled = false;
+  }
+
+  /** The 2D context, for panels drawn on the same pixel grid after the HUD. */
+  get context(): CanvasRenderingContext2D {
+    return this.ctx;
   }
 
   draw(dt: number, s: HudState): void {
@@ -94,30 +102,19 @@ export class Hud {
     ctx.fillStyle = s.hp / s.maxHp < 0.3 && Math.floor(this.time * 4) % 2 ? C.cream : C.red;
     ctx.fillRect(16, 6, Math.ceil((hw * s.hp) / s.maxHp), 3);
 
-    // Ammo: bullet icons bottom-left.
-    const mag = s.magazine;
-    const bx = 6;
-    const by = H - 15;
-    const reloading = s.reloadProgress >= 0;
-    const shownAmmo = reloading ? Math.floor(s.reloadProgress * mag) : s.ammo;
-    ctx.fillStyle = 'rgba(31,21,16,0.55)';
-    ctx.fillRect(bx - 3, by - 3, mag * 6 + 4, 15);
-    for (let i = 0; i < mag; i++) this.bullet(bx + i * 6, by, i < shownAmmo, reloading && i === shownAmmo);
+    // Weapon bar + ammo bottom-left.
+    const barY = H - SLOT_H - 4;
+    drawWeaponBar(ctx, 4, barY, s.weaponBar, this.time);
+    if (s.mounted && s.speedLabel) drawText(ctx, s.speedLabel, 4 + 3 * (SLOT_W + 2) + 4, barY + 6, C.cream, C.ink);
 
-    if (reloading) {
-      // Reload bar + label.
-      const w = mag * 6 - 2;
-      const y = by - 9;
-      drawText(ctx, 'RELOADING', bx, y - 6, C.cream, C.ink);
-      ctx.fillStyle = C.ink;
-      ctx.fillRect(bx - 1, y - 1, w + 2, 4);
-      ctx.fillStyle = C.rust;
-      ctx.fillRect(bx, y, Math.round(w * s.reloadProgress), 2);
-    } else if (s.ammo === 0) {
-      if (Math.floor(this.time * 3) % 2 === 0) drawText(ctx, 'R TO RELOAD', bx, by - 9, C.cream, C.ink);
+    if (s.toast) {
+      const tw = textWidth(s.toast);
+      const x = Math.round(W / 2 - tw / 2);
+      const y = Math.round(H * 0.72);
+      ctx.fillStyle = 'rgba(31,21,16,0.7)';
+      ctx.fillRect(x - 3, y - 2, tw + 6, 9);
+      drawText(ctx, s.toast, x, y, C.brassLight);
     }
-
-    if (s.mounted && s.speedLabel) drawText(ctx, s.speedLabel, bx + mag * 6 + 6, by + 3, C.cream, C.ink);
 
     if (s.prompt) {
       const tw = textWidth(s.prompt);
@@ -130,7 +127,7 @@ export class Hud {
 
     if (!s.pixelate) drawText(ctx, 'PIXEL OFF [P]', W - textWidth('PIXEL OFF [P]') - 4, 4, C.cream, C.ink);
 
-    if (s.cursorX !== null && s.cursorY !== null) this.crosshair(s.cursorX, s.cursorY, reloading);
+    if (s.cursorX !== null && s.cursorY !== null && !s.menuOpen) this.crosshair(s.cursorX, s.cursorY, s.weaponBar.reloadProgress >= 0);
   }
 
   private label(l: WorldLabel, W: number, H: number): void {
@@ -170,25 +167,6 @@ export class Hud {
       drawText(ctx, l.text, x, y, C.brassLight);
     } else {
       drawText(ctx, l.text, x, y, C.cream, C.ink);
-    }
-  }
-
-  private bullet(x: number, y: number, full: boolean, next: boolean): void {
-    const ctx = this.ctx;
-    if (full) {
-      ctx.fillStyle = C.ink;
-      ctx.fillRect(x, y, 5, 10);
-      ctx.fillStyle = C.brassLight;
-      ctx.fillRect(x + 1, y + 1, 3, 3); // tip
-      ctx.fillStyle = C.brass;
-      ctx.fillRect(x + 1, y + 4, 3, 5);
-      ctx.fillStyle = C.cream;
-      ctx.fillRect(x + 1, y + 1, 1, 2);
-    } else {
-      ctx.fillStyle = C.ink;
-      ctx.fillRect(x, y, 5, 10);
-      ctx.fillStyle = next && Math.floor(this.time * 8) % 2 ? C.rust : C.empty;
-      ctx.fillRect(x + 1, y + 4, 3, 5);
     }
   }
 

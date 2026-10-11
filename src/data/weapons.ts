@@ -20,12 +20,14 @@ export const WEAPONS = {
     falloffStart: 46,
     falloffMin: 1,
     carry: 'holster',
+    ammoType: 'revolverAmmo',
     drawTime: 0.45,
     ai: { preferredRange: [5, 11], extraDelay: [0.5, 1.1], telegraph: 0.5 },
     look: { kind: 'pistol', barrelLength: 0.32, barrels: 1, metal: PAL.metalLight, wood: PAL.woodLight },
   },
   rifle: {
     id: 'rifle',
+    ammoType: 'rifleAmmo',
     name: 'Rifle',
     damage: 45,
     fireInterval: 1.3,
@@ -45,6 +47,7 @@ export const WEAPONS = {
   },
   shotgun: {
     id: 'shotgun',
+    ammoType: 'shotgunShells',
     name: 'Shotgun',
     damage: 12,
     fireInterval: 0.9,

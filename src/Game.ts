@@ -17,6 +17,11 @@ import { pickInteractable, type Interactable } from './Interaction';
 import { buildWorld, type Occluder } from './world/World';
 import { segmentVsBox, type CircleCollider, type CollisionWorld, type Surface } from './world/Colliders';
 import { NavGrid } from './world/NavGrid';
+import { IconRenderer } from './items/IconRenderer';
+import type { ItemInstance } from './items/ItemInstance';
+import { pickup } from './items/transfer';
+import { InventoryUI, type UiPointer } from './ui/InventoryUI';
+import { WorldItemSystem, type WorldItem } from './world/WorldItem';
 import { Hud, type WorldLabel } from './ui/Hud';
 import { DebugOverlay } from './ui/DebugOverlay';
 import { damp, dirToYaw } from './util/math';
@@ -47,12 +52,18 @@ export class Game {
   readonly targets = new TargetSystem();
   readonly nav: NavGrid;
   readonly npcs: NpcSystem;
-  private interactables: Interactable[];
   /** What E would use right now (on foot). */
   private interactTarget: Interactable | null = null;
   private playerCollider: CircleCollider;
   private playerSpawn: THREE.Vector3;
   private respawnLeft = 0;
+  readonly icons: IconRenderer;
+  readonly ui: InventoryUI;
+  readonly worldItems: WorldItemSystem;
+  private uiPointer: UiPointer = { x: 0, y: 0, pressed: false, released: false };
+  private pausedAlpha = 0;
+  private fireBlocked = false;
+  private toast: { text: string; left: number } | null = null;
   private hud: Hud;
   private debug: DebugOverlay;
 
@@ -131,7 +142,22 @@ export class Game {
     this.npcs = new NpcSystem(NPCS, this.world, this.nav, this.occluders);
     this.scene.add(this.npcs.group);
     for (const n of this.npcs.npcs) this.targets.addActor(n);
-    this.interactables = [this.horse, ...this.npcs.npcs];
+    for (const n of this.npcs.npcs) n.onLoot = (npc) => this.openUi(() => this.ui.openLoot(npc));
+
+    this.icons = new IconRenderer(this.renderer);
+    this.icons.warm([8, 16]);
+    this.worldItems = new WorldItemSystem(this.world);
+    this.scene.add(this.worldItems.group, this.worldItems.glints);
+    this.pixelPass.unoutlined.push(this.worldItems.glints);
+    this.ui = new InventoryUI(
+      {
+        player: this.player,
+        icons: this.icons,
+        dropToWorld: (item) => this.dropToWorld(item),
+        toast: (t) => this.showToast(t),
+      },
+      this.renderer,
+    );
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
@@ -170,6 +196,13 @@ export class Game {
     const frameDt = Math.min(0.1, (now - this.lastTime) / 1000);
     this.lastTime = now;
     this.handleToggles();
+    this.handleMenuKeys();
+    if (this.ui.open) {
+      // Paused: no simulation; the world is rendered frozen behind the panel.
+      this.updateUi(frameDt);
+      this.render(frameDt, this.pausedAlpha, true);
+      return;
+    }
     const step = CONFIG.sim.fixedDt;
     this.accumulator += frameDt;
     let steps = 0;
@@ -179,7 +212,64 @@ export class Game {
       steps++;
     }
     if (steps === CONFIG.sim.maxStepsPerFrame) this.accumulator = 0;
-    this.render(frameDt, this.accumulator / step);
+    this.pausedAlpha = this.accumulator / step;
+    this.render(frameDt, this.pausedAlpha, false);
+  }
+
+  /** I toggles the inventory, Esc closes (or drops the held item first); E also closes the loot view. */
+  private handleMenuKeys(): void {
+    const i = this.input;
+    const open = this.ui.open;
+    if (i.consume('KeyI')) {
+      if (open) this.closeUi();
+      else if (!this.player.dead) this.openUi(() => this.ui.openInventory());
+    } else if (open && i.consume('Escape')) {
+      this.ui.escape();
+      if (!this.ui.open) this.closeUi();
+    } else if (open && this.ui.mode?.kind === 'loot' && i.consume('KeyE')) {
+      this.closeUi();
+    }
+  }
+
+  private openUi(open: () => void): void {
+    open();
+    this.input.clearPressed();
+  }
+
+  private closeUi(): void {
+    this.ui.close();
+    this.input.clearPressed();
+    // Don't let a mouse button still held from the menu fire the gun.
+    this.fireBlocked = this.input.mouseDown;
+  }
+
+  private updateUi(frameDt: number): void {
+    const i = this.input;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.uiPointer.x = Math.floor(((i.mouseX - rect.left) / rect.width) * this.lowW);
+    this.uiPointer.y = Math.floor(((i.mouseY - rect.top) / rect.height) * this.lowH);
+    this.uiPointer.pressed = i.consume('Mouse0');
+    this.uiPointer.released = i.consume('Mouse0Up');
+    this.ui.update(frameDt, this.uiPointer, { rotate: i.consume('KeyR'), shift: i.sprint }, this.lowW, this.lowH);
+  }
+
+  /** Put an item on the ground next to the player (towards the aim). */
+  private dropToWorld(item: ItemInstance): void {
+    const p = this.player;
+    const w = this.worldItems.spawn(item, p.pos, p.aimYaw, p.mounted ? 1.7 : 1.0);
+    w.onPickup = (wi) => this.pickUp(wi);
+  }
+
+  private pickUp(w: WorldItem): void {
+    const before = w.item.quantity;
+    const left = pickup(this.player.inventory, w.item);
+    if (left === 0) {
+      this.worldItems.remove(w);
+    } else {
+      this.showToast('Inventory full');
+      if (left < before) w.item.quantity = left;
+    }
+    this.player.syncEquipment();
   }
 
   private handleToggles(): void {
@@ -209,7 +299,9 @@ export class Game {
 
     const p = this.player;
     p.update(dt);
-    this.interactTarget = p.mounted || p.dead ? null : pickInteractable(this.interactables, p.pos, p.aimYaw);
+    if (!input.mouseDown) this.fireBlocked = false;
+    const interactables: Interactable[] = [this.horse, ...this.npcs.npcs, ...this.worldItems.items];
+    this.interactTarget = p.mounted || p.dead ? null : pickInteractable(interactables, p.pos, p.aimYaw);
     if (input.consume('KeyE') && !p.dead) {
       // Context-sensitive: riding always dismounts, on foot use whatever is targeted.
       if (p.mounted) this.dismount();
@@ -220,9 +312,10 @@ export class Game {
       moveX: mx,
       moveZ: mz,
       sprint: input.sprint,
-      fireHeld: input.mouseDown && !p.dead,
+      fireHeld: input.mouseDown && !p.dead && !this.fireBlocked,
       reload: input.consume('KeyR') && !p.dead,
       holster: input.consume('KeyH'),
+      select: this.slotKey(),
       aim: this.aim,
     };
 
@@ -267,6 +360,20 @@ export class Game {
     const v = (this.input.mouseY - rect.top) / rect.height;
     this.pickAim(u * 2 - 1, -(v * 2 - 1), this.aim);
     this.cursor = this.input.mouseInside ? { x: Math.floor(u * this.lowW), y: Math.floor(v * this.lowH) } : null;
+  }
+
+  /** Weapon slot key pressed this step (each key is consumed). */
+  private slotKey(): number | null {
+    let pressed: number | null = null;
+    ['Digit1', 'Digit2', 'Digit3'].forEach((k, i) => {
+      if (this.input.consume(k) && pressed === null) pressed = i;
+    });
+    return pressed;
+  }
+
+  /** Show a short message in the lower middle of the screen. */
+  private showToast(text: string, seconds = 2): void {
+    this.toast = { text, left: seconds };
   }
 
   private aimFrom = new THREE.Vector3();
@@ -394,14 +501,17 @@ export class Game {
 
   // ------------------------------------------------------------------------------ rendering
 
-  private render(frameDt: number, alpha: number): void {
+  private render(frameDt: number, alpha: number, paused: boolean): void {
     this.renderer.info.reset();
     const p = this.player;
-    this.horse.sync(alpha, frameDt);
+    // Paused: everything holds its pose (animations get no time).
+    const animDt = paused ? 0 : frameDt;
+    this.horse.sync(alpha, animDt);
     if (!p.mounted) p.model.root.position.lerpVectors(p.prevPos, p.pos, alpha);
-    p.animate(frameDt);
-    for (const n of this.npcs.npcs) n.sync(alpha, frameDt);
+    p.animate(animDt);
+    for (const n of this.npcs.npcs) n.sync(alpha, animDt);
     this.projectiles.sync(alpha);
+    this.worldItems.update(animDt);
 
     // Camera: follow the (interpolated) player, lead a little towards the aim and travel direction.
     const base = p.mounted ? this.horse.model.root.position : p.model.root.position;
@@ -414,9 +524,9 @@ export class Game {
       lead.z += Math.cos(m.heading) * m.speed * 0.18;
     }
     lead.add(base).setY(0);
-    this.rig.update(frameDt, lead, this.pixelate);
+    this.rig.update(animDt, lead, this.pixelate);
     this.updateSun();
-    this.updateOccluders(frameDt, base, p.mounted);
+    this.updateOccluders(animDt, base, p.mounted);
 
     if (this.pixelate) {
       this.pixelPass.render(this.renderer, this.scene, this.rig.camera, this.rig.subpixel);
@@ -426,22 +536,34 @@ export class Game {
       this.renderer.render(this.scene, this.rig.view);
     }
 
+    if (this.toast) {
+      this.toast.left -= frameDt;
+      if (this.toast.left <= 0) this.toast = null;
+    }
+    const w = p.weapon;
     this.hud.draw(frameDt, {
-      ammo: p.ammo,
-      magazine: p.weapon.def.magazine,
+      weaponBar: {
+        slots: p.equipment.weapons.map((item, i) => ({ icon: item ? this.icons.get(item.defId, 8) : null, selected: p.active === i })),
+        drawn: p.drawn,
+        ammo: w ? { loaded: w.ammo, magazine: w.def.magazine, reserve: w.reserve } : null,
+        reloadProgress: p.reloadProgress,
+        noAmmo: p.noAmmo > 0,
+      },
+      toast: this.toast?.text ?? null,
+      menuOpen: paused,
       hp: p.hp,
       maxHp: CONFIG.player.maxHp,
       hurt: p.hurt,
       dead: p.dead,
-      labels: this.worldLabels(),
-      reloadProgress: p.reloadProgress,
-      prompt: this.elapsed < 9 ? 'WASD MOVE  MOUSE AIM  CLICK SHOOT  R RELOAD  E USE' : null,
+      labels: paused ? [] : this.worldLabels(),
+      prompt: this.elapsed < 9 ? 'WASD MOVE  CLICK SHOOT  R RELOAD  1-3 WEAPONS  E USE  I INVENTORY' : null,
       cursorX: this.cursor?.x ?? null,
       cursorY: this.cursor?.y ?? null,
       mounted: p.mounted,
       speedLabel: p.mounted ? this.gaitLabel() : null,
       pixelate: this.pixelate,
     });
+    if (paused) this.ui.draw(this.hud.context, this.lowW, this.lowH, this.uiPointer);
     this.debug.draw(frameDt, this.rig.view, this.horse, [
       `low-res ${this.lowW}x${this.lowH} x${this.scale}  pixel ${this.pixelate ? 'on' : 'off'}  palette ${this.pixelPass.quantize ? 'on' : 'off'} [O]  outlines [L]`,
       `player ${p.pos.x.toFixed(1)}, ${p.pos.z.toFixed(1)}  ${p.mounted ? 'mounted' : 'on foot'}  ammo ${p.ammo}`,
@@ -462,7 +584,7 @@ export class Game {
     const out: WorldLabel[] = [];
     const t = this.interactTarget;
     for (const n of this.npcs.npcs) {
-      if (!n.alive) continue;
+      if (!n.alive) continue; // corpses get a plain prompt below
       const r = n.model.root.position;
       const head = this.project(r.x, 2.15, r.z);
       // Stacked upwards: name tag, prompt, aim warning, speech bubble.
@@ -478,7 +600,7 @@ export class Game {
       }
       if (n.speech) out.push({ kind: 'speech', text: n.speech, x: head.x, y });
     }
-    if (t && !(t instanceof Npc)) {
+    if (t && !(t instanceof Npc && t.alive)) {
       const at = this.project(t.position.x, t.promptHeight, t.position.z);
       out.push({ kind: 'prompt', text: `[E] ${t.label}`, x: at.x, y: at.y });
     }

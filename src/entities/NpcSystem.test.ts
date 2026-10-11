@@ -4,6 +4,9 @@ import { CONFIG } from '../config';
 import { NPCS } from '../data/npcs';
 import type { NpcDef } from '../data/types';
 import { PAL } from '../render/palette';
+import { GridContainer } from '../items/GridContainer';
+import { createItem } from '../items/ItemInstance';
+import { takeAll } from '../items/transfer';
 import { WEAPONS } from '../data/weapons';
 import { buildWorld } from '../world/World';
 import { NavGrid } from '../world/NavGrid';
@@ -99,23 +102,18 @@ describe('NPCs', () => {
     expect(gunman.mode).toBe('routine');
   });
 
-  it('a fifth NPC with a new outfit and an inline weapon needs only data', () => {
+  it('a fifth NPC with its own look and an inline weapon needs only data', () => {
     const fifth: NpcDef = {
       id: 'preacher',
       name: 'Silas Crane',
       attitude: 'neutral',
       defendsOthers: false,
-      outfit: {
+      appearance: {
         body: 'male',
         skin: PAL.skinDark,
         hair: PAL.cream,
         hairStyle: 'long',
-        shirt: PAL.ink,
-        trousers: PAL.ink,
-        boots: PAL.ink,
-        over: { kind: 'duster', color: PAL.ink },
-        bandana: PAL.cream,
-        hat: { kind: 'cowboy', color: PAL.ink },
+        clothing: { hat: 'cowboy_hat_black', top: 'shirt_cream', outerwear: 'duster_sand', neck: 'bandana_red', legs: 'trousers_brown', boots: 'boots_black' },
       },
       weapon: {
         ...WEAPONS.revolver,
@@ -126,7 +124,6 @@ describe('NPCs', () => {
         range: 12,
         look: { kind: 'pistol', barrelLength: 0.14, barrels: 2, metal: PAL.brass, wood: PAL.cream },
       },
-      holster: false, // carried in hand
       spawn: [4, 3],
       routine: { kind: 'idle', at: [4, 3], facing: Math.PI },
       lines: { greet: ['Repent.'] },
@@ -144,6 +141,44 @@ describe('NPCs', () => {
     for (let t = 0; t < 4; t += DT) sys.update(DT, player, [], (n, shot) => n === npc && fired.push(shot.weapon.id));
     expect(fired.length).toBeGreaterThan(0);
     expect(fired.every((id) => id === 'derringer')).toBe(true);
+  });
+
+  it('carry their weapon plus 1-2 boxes of matching ammo; the unarmed carry nothing', () => {
+    const { gunman, townswoman, rifle } = setup();
+    expect(gunman.equipment.weapons[0]?.defId).toBe('revolver');
+    const boxes = gunman.inventory.items.filter((i) => i.defId === 'ammo_revolver').length;
+    expect(boxes).toBeGreaterThanOrEqual(1);
+    expect(boxes).toBeLessThanOrEqual(2);
+    expect(rifle.inventory.ammoCount('rifleAmmo')).toBeGreaterThan(0);
+    expect(townswoman.inventory.isEmpty).toBe(true);
+    expect(gunman.equipment.clothing.holster?.defId).toBe('holster_leather');
+  });
+
+  it('reload from their own pockets and flee once out of ammo', () => {
+    const { sys, player, gunman, run } = setup();
+    player.pos.set(2, 0, 4);
+    gunman.inventory.takeAmmo('revolverAmmo', 999);
+    gunman.inventory.placeAnywhere(createItem('ammo_revolver', 3));
+    sys.onPlayerHitNpc(gunman, player);
+    run(30);
+    expect(gunman.inventory.ammoCount('revolverAmmo')).toBe(0);
+    expect(['flee', 'hide']).toContain(gunman.mode);
+  });
+
+  it('dead NPCs become lootable, and say so once emptied', () => {
+    const { sys, gunman } = setup();
+    const opened: string[] = [];
+    gunman.onLoot = (n) => opened.push(n.name);
+    gunman.hit(gunman.pos, gunman.pos, { damage: 999, shooter: null });
+    expect(gunman.canInteract()).toBe(true);
+    expect(gunman.label).toBe(`Loot ${gunman.name}`);
+    gunman.interact();
+    expect(opened).toEqual([gunman.name]);
+    const bag = new GridContainer(8, 4);
+    takeAll(gunman.inventory, bag, [{ holder: gunman.equipment, key: 'w0' }]);
+    expect(gunman.label).toBe(`Loot ${gunman.name} (empty)`);
+    expect(bag.items.some((i) => i.defId === 'revolver' && i.loadedRounds === 6)).toBe(true);
+    void sys;
   });
 
   it('hostile and fleeing NPCs cannot be talked to', () => {

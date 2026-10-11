@@ -3,6 +3,11 @@ import { CONFIG } from '../config';
 import { DEFAULT_LINES, NAMES } from '../data/npcs';
 import type { NpcDef, NpcLines, Vec2, WeaponDef } from '../data/types';
 import { resolveWeapon } from '../data/weapons';
+import { EQUIP_SLOTS } from '../data/types';
+import { Equipment, type SlotKey } from '../items/Equipment';
+import { GridContainer } from '../items/GridContainer';
+import { ammoItemFor, itemDef, itemForWeapon, weaponOf } from '../items/ItemDef';
+import { createItem, type ItemInstance } from '../items/ItemInstance';
 import type { Interactable } from '../Interaction';
 import { damp, dirToYaw, moveToward, yawToX, yawToZ } from '../util/math';
 import { segmentVsCylinder, type CircleCollider, type CollisionWorld } from '../world/Colliders';
@@ -49,16 +54,20 @@ export function playerChest(p: PlayerView, out = new THREE.Vector3()): THREE.Vec
 export class Npc implements Target, Interactable {
   readonly name: string;
   readonly model: NpcModel;
-  readonly weaponDef: WeaponDef | null;
-  readonly weapon: WeaponState | null;
   readonly lines: NpcLines;
+  /** Pockets: ammo and whatever else (lootable when dead). */
+  readonly inventory = new GridContainer(CONFIG.items.npcGrid.w, CONFIG.items.npcGrid.h);
+  /** Weapon in slot 'w0' and worn clothing (clothing isn't lootable yet). */
+  readonly equipment = new Equipment();
+  private states = new WeakMap<ItemInstance, WeaponState>();
+  /** Set by the game: open the loot view for this corpse. */
+  onLoot: (npc: Npc) => void = () => {};
   readonly pos = new THREE.Vector3();
   readonly prevPos = new THREE.Vector3();
   readonly vel = new THREE.Vector2();
   readonly collider: CircleCollider;
   readonly range = CONFIG.npc.talkRange;
   readonly priority = 1;
-  readonly promptHeight = 2.3;
 
   mode: NpcMode = 'routine';
   hp: number;
@@ -102,14 +111,60 @@ export class Npc implements Target, Interactable {
   private chest = new THREE.Vector3();
 
   constructor(readonly def: NpcDef) {
-    this.name = def.name ?? randomName(def.outfit.body);
-    this.weaponDef = resolveWeapon(def.weapon);
-    this.weapon = this.weaponDef ? new WeaponState(this.weaponDef) : null;
+    this.name = def.name ?? randomName(def.appearance.body);
     this.lines = { ...DEFAULT_LINES[def.attitude], ...def.lines };
     this.hp = this.maxHp;
-    this.model = new NpcModel(def.outfit, this.weaponDef, def.holster);
+    this.model = new NpcModel(def.appearance, null);
     this.collider = { kind: 'circle', x: 0, z: 0, r: CONFIG.npc.radius, height: 1.9, surface: 'wood', blocksBullets: false };
     this.spawn();
+  }
+
+  /** The equipped weapon's definition (null when unarmed or looted). */
+  get weaponDef(): WeaponDef | null {
+    const item = this.equipment.weapons[0];
+    return item ? weaponOf(itemDef(item.defId)) : null;
+  }
+
+  /** The equipped weapon's state; reloads come out of this NPC's own inventory. */
+  get weapon(): WeaponState | null {
+    const item = this.equipment.weapons[0];
+    const def = this.weaponDef;
+    if (!item || !def) return null;
+    let s = this.states.get(item);
+    if (!s) {
+      s = new WeaponState(def, item, this.inventory);
+      this.states.set(item, s);
+    }
+    return s;
+  }
+
+  /** Fresh kit from the data: weapon, worn clothing, pockets (given or 1-2 boxes of matching ammo). */
+  private resetLoadout(): void {
+    for (const p of [...this.inventory.placements]) this.inventory.remove(p.item);
+    for (const k of ['w0', ...EQUIP_SLOTS] as SlotKey[]) this.equipment.take(k);
+    const w = resolveWeapon(this.def.weapon);
+    if (w) this.equipment.put('w0', createItem(itemForWeapon(w).id), null);
+    for (const s of EQUIP_SLOTS) {
+      const id = this.def.appearance.clothing[s];
+      if (id) this.equipment.put(s, createItem(id), null);
+    }
+    let grants = this.def.inventory;
+    if (!grants) {
+      const ammo = w ? ammoItemFor(w.ammoType) : null;
+      grants = ammo ? Array.from({ length: 1 + Math.floor(Math.random() * 2) }, () => ({ item: ammo.id })) : [];
+    }
+    for (const g of grants) this.inventory.placeAnywhere(createItem(g.item, g.quantity ?? itemDef(g.item).boxQuantity ?? 1));
+    this.lootChanged();
+  }
+
+  /** After items were taken from the corpse: update what the model carries. */
+  lootChanged(): void {
+    this.model.setWeapon(this.weaponDef);
+  }
+
+  /** Anything left to loot. */
+  get hasLoot(): boolean {
+    return !this.inventory.isEmpty || this.equipment.weapons[0] !== null;
   }
 
   get maxHp(): number {
@@ -128,7 +183,12 @@ export class Npc implements Target, Interactable {
   // ---------------------------------------------------------------- Interactable
 
   get label(): string {
+    if (!this.alive) return `Loot ${this.name}${this.hasLoot ? '' : ' (empty)'}`;
     return `Talk to ${this.name}`;
+  }
+
+  get promptHeight(): number {
+    return this.alive ? 2.3 : 0.9;
   }
 
   get position(): THREE.Vector3 {
@@ -136,10 +196,14 @@ export class Npc implements Target, Interactable {
   }
 
   canInteract(): boolean {
-    return this.mode === 'routine';
+    return this.mode === 'routine' || this.mode === 'dead';
   }
 
   interact(): void {
+    if (!this.alive) {
+      this.onLoot(this);
+      return;
+    }
     this.talkLeft = CONFIG.npc.talkTime;
     this.say(this.lines.greet[this.greetIdx++ % this.lines.greet.length], CONFIG.npc.talkTime);
   }
@@ -172,7 +236,7 @@ export class Npc implements Target, Interactable {
     if (!this.alive) return;
     this.calmTimer = 0;
     this.talkLeft = 0;
-    if (this.weapon) {
+    if (this.weapon && !this.weapon.dry) {
       if (this.mode !== 'hostile') {
         this.mode = 'hostile';
         this.say(pick(this.lines.hostile));
@@ -240,7 +304,7 @@ export class Npc implements Target, Interactable {
     this.hp = this.maxHp;
     this.mode = 'routine';
     this.draw = this.drawTarget = 0;
-    this.weapon?.refill();
+    this.resetLoadout();
     this.clearPath();
     const r = this.def.routine;
     const facing = r.kind === 'lean' || r.kind === 'idle' ? r.facing : 0;
@@ -360,6 +424,12 @@ export class Npc implements Target, Interactable {
   private combat(dt: number, ctx: NpcContext, dist: number, chest: THREE.Vector3): void {
     const def = this.weaponDef!;
     const weapon = this.weapon!;
+    // Out of ammo with nothing to reload: run.
+    if (weapon.dry && !weapon.reloading) {
+      this.drawTarget = 0;
+      this.startFleeing();
+      return;
+    }
     const nc = CONFIG.npc;
 
     // Aim lags behind the target (reaction time), so moving targets are harder to hit.

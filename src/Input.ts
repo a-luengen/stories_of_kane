@@ -26,7 +26,10 @@ export class Input {
       }
     });
     window.addEventListener('mouseup', (e) => {
-      if (e.button === 0) this.mouseDown = false;
+      if (e.button === 0) {
+        this.mouseDown = false;
+        this.pressed.add('Mouse0Up');
+      }
     });
     window.addEventListener('mousemove', (e) => {
       this.mouseX = e.clientX;
@@ -39,6 +42,11 @@ export class Input {
 
   isDown(code: string): boolean {
     return this.down.has(code);
+  }
+
+  /** Forget pending presses (e.g. when a menu opens or closes). */
+  clearPressed(): void {
+    this.pressed.clear();
   }
 
   /** Returns true once per physical key press. */

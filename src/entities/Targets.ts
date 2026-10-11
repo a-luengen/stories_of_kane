@@ -13,6 +13,15 @@ export interface HitInfo {
   shooter: Target | null;
 }
 
+/** Upright cylinder a character can be shot in. */
+export interface Hitbox {
+  x: number;
+  z: number;
+  r: number;
+  y0: number;
+  y1: number;
+}
+
 export interface Target {
   readonly object: THREE.Object3D;
   /** Returns the hit parameter along a→b, or null. */
@@ -21,6 +30,8 @@ export interface Target {
   hit(point: THREE.Vector3, dir: THREE.Vector3, info: HitInfo): BurstKind;
   /** Per-step animation (static targets; actors update themselves). */
   update?(dt: number): void;
+  /** Characters: their shootable volume (for the cover debug view). */
+  hitbox?(): Hitbox | null;
   /** Bullets pass through targets on the shooter's team (outlaws don't shoot each other). */
   readonly team?: string;
 }

@@ -9,7 +9,7 @@ import { createItem, type ItemInstance } from '../items/ItemInstance';
 import { segmentVsCylinder, type CollisionWorld, type CircleCollider } from '../world/Colliders';
 import type { BurstKind } from './Particles';
 import { PlayerModel } from './PlayerModel';
-import type { HitInfo, Target } from './Targets';
+import type { Hitbox, HitInfo, Target } from './Targets';
 import { WeaponState, type ShotRequest } from './Weapon';
 import { muzzleOffset } from './WeaponModel';
 import { dirToYaw, lerp, moveToward, yawToX, yawToZ } from '../util/math';
@@ -328,11 +328,17 @@ export class Player implements Target {
 
   // ---------------------------------------------------------------- Target (hitbox)
 
-  test(a: THREE.Vector3, b: THREE.Vector3): { t: number; normal: THREE.Vector3 } | null {
+  /** The shootable volume: an upright cylinder (lower and shorter when crouched / higher in the saddle). */
+  hitbox(): Hitbox | null {
     if (this.dead) return null;
-    // Crouching shrinks the hitbox (lower profile).
     const [y0, y1] = this.mounted ? [1.0, 2.95] : [0, 1.85 * lerp(1, CONFIG.player.crouch.hitboxScale, this.crouch)];
-    const h = segmentVsCylinder(a.x, a.y, a.z, b.x, b.y, b.z, this.pos.x, this.pos.z, 0.38, y0, y1);
+    return { x: this.pos.x, z: this.pos.z, r: 0.38, y0, y1 };
+  }
+
+  test(a: THREE.Vector3, b: THREE.Vector3): { t: number; normal: THREE.Vector3 } | null {
+    const hb = this.hitbox();
+    if (!hb) return null;
+    const h = segmentVsCylinder(a.x, a.y, a.z, b.x, b.y, b.z, hb.x, hb.z, hb.r, hb.y0, hb.y1);
     return h ? { t: h.t, normal: new THREE.Vector3(h.nx, h.ny, h.nz) } : null;
   }
 

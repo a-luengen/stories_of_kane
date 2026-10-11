@@ -217,7 +217,7 @@ export function well(batch: StaticBatch, cw: CollisionWorld, x: number, z: numbe
   for (const s of [-1, 1]) batch.box(0.14, 1.9, 0.14, PAL.wood, x + s * 0.7, 0.4, z);
   batch.box(1.7, 0.12, 0.12, PAL.woodLight, x, 2.0, z);
   batch.put(new THREE.ConeGeometry(1.2, 0.6, 4), PAL.rust, x, 2.5, z, 0, Math.PI / 4, 0);
-  cw.addCircle(x, z, 0.92, 1.0, 'rock');
+  cw.addCircle(x, z, 0.92, 0.82, 'rock'); // the stone wall of the well
 }
 
 export function waterTower(batch: StaticBatch, cw: CollisionWorld, x: number, z: number): void {
@@ -286,7 +286,7 @@ export function rock(batch: StaticBatch, cw: CollisionWorld, x: number, z: numbe
     const s2 = s * 0.5;
     batch.put(new THREE.DodecahedronGeometry(1, 0), shade(col, 1.1), x + s * 0.9, s2 * 0.3, z + s * 0.4, rng.range(0, 3), rng.range(0, 3), 0, s2, s2 * 0.7, s2);
   }
-  cw.addCircle(x, z, s * 1.05, s * 0.9, 'rock');
+  cw.addCircle(x, z, s * 1.05, s * 1.1, 'rock'); // cover up to the visible top of the stone
 }
 
 export function shrub(batch: StaticBatch, x: number, z: number, rng: Rng): void {
@@ -379,7 +379,8 @@ export function wagon(batch: StaticBatch, cw: CollisionWorld, x: number, z: numb
     for (const t of [-1.3, 0, 1.3]) put(new THREE.TorusGeometry(0.81, 0.04, 4, 10, Math.PI), PAL.wood, 0, 1.0, t);
     box(1.4, 0.06, 0.06, PAL.wood, 0, 1.0, 1.36);
   }
-  capsuleColliders(cw, x, z, yaw, 1.2, 0.8, kind === 'covered' ? 1.8 : 1.1, 'wood');
+  // Cover up to the side boards (lower when wrecked), or the top of the canvas.
+  capsuleColliders(cw, x, z, yaw, 1.2, 0.8, kind === 'covered' ? 1.8 : kind === 'broken' ? 1.0 : 1.15, 'wood');
 }
 
 /** A low wall of sandbags (cover), axis-aligned along X (`alongX`) or Z. */

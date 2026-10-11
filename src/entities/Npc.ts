@@ -15,7 +15,7 @@ import type { NavGrid } from '../ai/NavGrid';
 import type { Horse } from './Horse';
 import { NpcModel } from './NpcModel';
 import type { BurstKind } from './Particles';
-import type { HitInfo, Target } from './Targets';
+import type { Hitbox, HitInfo, Target } from './Targets';
 import { WeaponState, type ShotRequest } from './Weapon';
 import { muzzleOffset } from './WeaponModel';
 
@@ -121,7 +121,7 @@ export class Npc implements Target, Interactable {
     this.lines = { ...DEFAULT_LINES[def.attitude], ...def.lines };
     this.hp = this.maxHp;
     this.model = new NpcModel(def.appearance, null);
-    this.collider = { kind: 'circle', x: 0, z: 0, r: CONFIG.npc.radius, height: 1.9, surface: 'wood', blocksBullets: false };
+    this.collider = { kind: 'circle', x: 0, z: 0, r: CONFIG.npc.radius, coverHeight: 1.9, surface: 'wood', blocksBullets: false };
     this.spawn();
   }
 
@@ -221,12 +221,18 @@ export class Npc implements Target, Interactable {
     return this.model.root;
   }
 
-  test(a: THREE.Vector3, b: THREE.Vector3): { t: number; normal: THREE.Vector3 } | null {
+  /** The shootable volume (only the rider on horseback: horses can't be harmed). */
+  hitbox(): Hitbox | null {
     if (!this.alive) return null;
     const top = this.mode === 'hide' && this.cowering ? 1.1 : 1.85;
-    // On horseback only the rider is hit (horses can't be harmed).
     const [y0, y1] = this.mount ? [1.0, 2.95] : [0, top];
-    const h = segmentVsCylinder(a.x, a.y, a.z, b.x, b.y, b.z, this.pos.x, this.pos.z, 0.38, y0, y1);
+    return { x: this.pos.x, z: this.pos.z, r: 0.38, y0, y1 };
+  }
+
+  test(a: THREE.Vector3, b: THREE.Vector3): { t: number; normal: THREE.Vector3 } | null {
+    const hb = this.hitbox();
+    if (!hb) return null;
+    const h = segmentVsCylinder(a.x, a.y, a.z, b.x, b.y, b.z, hb.x, hb.z, hb.r, hb.y0, hb.y1);
     return h ? { t: h.t, normal: new THREE.Vector3(h.nx, h.ny, h.nz) } : null;
   }
 

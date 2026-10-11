@@ -1,8 +1,13 @@
 export type Surface = 'wood' | 'rock' | 'cactus' | 'metal' | 'dirt';
 
 interface ColliderBase {
-  /** Extruded from y = 0 up to this height (bullets above it pass over). */
-  height: number;
+  /**
+   * Top of the collider, extruded up from `base` (default the ground). It's also the cover it
+   * gives: a bullet passing through the footprint below this height is stopped; above, it flies
+   * over. Low cover (barrels, crates, sandbags, troughs, fences) is about waist high; walls,
+   * buildings, big rocks and wagons are taller.
+   */
+  coverHeight: number;
   /** Bottom of the collider (default 0). Above-ground colliders are overhead: they don't block walking, only standing up. */
   base?: number;
   surface: Surface;
@@ -54,14 +59,14 @@ export class CollisionWorld {
 
   constructor(readonly halfSize: number) {}
 
-  addCircle(x: number, z: number, r: number, height: number, surface: Surface, blocksBullets = true): CircleCollider {
-    const c: CircleCollider = { kind: 'circle', x, z, r, height, surface, blocksBullets };
+  addCircle(x: number, z: number, r: number, coverHeight: number, surface: Surface, blocksBullets = true): CircleCollider {
+    const c: CircleCollider = { kind: 'circle', x, z, r, coverHeight, surface, blocksBullets };
     this.insert(c, x - r, z - r, x + r, z + r);
     return c;
   }
 
-  addBox(minX: number, minZ: number, maxX: number, maxZ: number, height: number, surface: Surface, blocksBullets = true): BoxCollider {
-    const c: BoxCollider = { kind: 'box', minX, minZ, maxX, maxZ, height, surface, blocksBullets };
+  addBox(minX: number, minZ: number, maxX: number, maxZ: number, coverHeight: number, surface: Surface, blocksBullets = true): BoxCollider {
+    const c: BoxCollider = { kind: 'box', minX, minZ, maxX, maxZ, coverHeight, surface, blocksBullets };
     this.insert(c, minX, minZ, maxX, maxZ);
     return c;
   }
@@ -150,7 +155,7 @@ export class CollisionWorld {
     const list = this.query(x - r, z - r, x + r, z + r, this.scratch);
     return list.some((c) => {
       const base = c.base ?? 0;
-      if (base <= 0 || base >= toY || c.height <= fromY) return false;
+      if (base <= 0 || base >= toY || c.coverHeight <= fromY) return false;
       if (c.kind === 'circle') return Math.hypot(x - c.x, z - c.z) < r + c.r;
       const cx = Math.max(c.minX, Math.min(x, c.maxX));
       const cz = Math.max(c.minZ, Math.min(z, c.maxZ));
@@ -171,8 +176,8 @@ export class CollisionWorld {
       if (!c.blocksBullets) continue;
       const h =
         c.kind === 'circle'
-          ? segmentVsCylinder(ax, ay, az, bx, by, bz, c.x, c.z, c.r, 0, c.height)
-          : segmentVsBox(ax, ay, az, bx, by, bz, c.minX, c.minZ, c.maxX, c.maxZ, c.height);
+          ? segmentVsCylinder(ax, ay, az, bx, by, bz, c.x, c.z, c.r, c.base ?? 0, c.coverHeight)
+          : segmentVsBox(ax, ay, az, bx, by, bz, c.minX, c.minZ, c.maxX, c.maxZ, c.coverHeight, c.base ?? 0);
       if (h && (!best || h.t < best.t)) {
         h.surface = c.surface;
         h.collider = c;
@@ -283,7 +288,7 @@ export function segmentVsCylinder(
   return { t: t0, nx: px / len, ny: 0, nz: pz / len, surface: 'dirt', collider: null };
 }
 
-/** Segment vs axis-aligned box footprint extruded 0..height (slab method). */
+/** Segment vs axis-aligned box footprint extruded y0..height (slab method). */
 export function segmentVsBox(
   ax: number,
   ay: number,
@@ -296,6 +301,7 @@ export function segmentVsBox(
   maxX: number,
   maxZ: number,
   height: number,
+  y0 = 0,
 ): SegmentHit | null {
   let tIn = 0;
   let tOut = 1;
@@ -304,7 +310,7 @@ export function segmentVsBox(
   let nz = 0;
   const slabs: [number, number, number, number, 'x' | 'y' | 'z'][] = [
     [ax, bx - ax, minX, maxX, 'x'],
-    [ay, by - ay, 0, height, 'y'],
+    [ay, by - ay, y0, height, 'y'],
     [az, bz - az, minZ, maxZ, 'z'],
   ];
   for (const [o, d, lo, hi, axis] of slabs) {

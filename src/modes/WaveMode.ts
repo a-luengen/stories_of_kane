@@ -69,7 +69,7 @@ export class WaveMode implements GameMode {
         map: buildOutpostMap,
         npcs: [],
         regen: false,
-        tutorial: 'SURVIVE THE WAVES   B BANDAGE   TRADE AT THE WAGON BETWEEN WAVES',
+        tutorial: 'SURVIVE THE WAVES   G BANDAGE   C CROUCH   TRADE AT THE WAGON BETWEEN WAVES',
       },
       {
         onPlayerDeath: () => this.onPlayerDeath(),

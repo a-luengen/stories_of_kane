@@ -90,6 +90,11 @@ export class ProjectileSystem {
     }
   }
 
+  /** Positions of bullets in flight (for the cover debug view). */
+  live(): THREE.Vector3[] {
+    return this.bullets.filter((b) => b.alive).map((b) => b.pos);
+  }
+
   /** Interpolate tracer visuals between fixed steps. */
   sync(alpha: number): void {
     const len = CONFIG.projectiles.tracerLength;

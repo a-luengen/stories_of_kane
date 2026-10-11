@@ -18,7 +18,8 @@ npm run build      # typecheck + production build
 | R | Reload (from ammo in your inventory) · rotate a held item in the inventory |
 | 1 / 2 / 3 | Select weapon slot (again: holster) |
 | I | Inventory (pauses the game) · Esc / I closes |
-| B | Use a bandage (also right-click it in the inventory) |
+| G | Use a bandage (also right-click it in the inventory) |
+| B | Cover debug view: prop cover heights (green low / yellow medium / orange tall), hitboxes, bullet heights |
 | Esc | Pause menu (closes an open inventory / loot / shop screen first) |
 | Enter | Wave mode: skip the break between waves |
 | H | Holster the revolver (also happens after 30 s without shooting, and on death) |
@@ -78,4 +79,4 @@ The game opens on a title screen (live desert backdrop). **Sandbox** is the fron
 - **Waves:** outlaws (gunslingers, riflemen, shotgunners) come in through the passes in waves set by `data/waves.ts` (a formula takes over after the table). Each wave starts with a 5 s countdown, and the break after a wave lasts 25 s (Enter skips it).
 - **Merchant:** between waves, trade with the merchant at the covered wagon. Earn dollars per kill and per cleared wave, buy guns, ammo, bandages and clothes, and sell anything for half its price.
 - **Horses:** a horse arrives after wave 3. Mounted outlaws appear from wave 5; shoot the rider and the horse is yours to take for about 10 s before it bolts.
-- **Healing and death:** bandages (B) are the only way to heal. One revive per run (the star by the health bar); the second death ends the run. The best wave reached is saved and shown on the menu.
+- **Healing and death:** bandages (G) are the only way to heal. One revive per run (the star by the health bar); the second death ends the run. The best wave reached is saved and shown on the menu.

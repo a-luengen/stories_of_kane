@@ -20,6 +20,7 @@ import { damp, dirToYaw } from '../util/math';
 import { segmentVsBox, type CircleCollider, type CollisionWorld, type Surface } from '../world/Colliders';
 import type { Occluder, WorldData } from '../world/props';
 import { WorldItemSystem, type WorldItem } from '../world/WorldItem';
+import { CoverDebug } from '../render/CoverDebug';
 import { disposeObject } from './dispose';
 import type { Engine } from './Engine';
 
@@ -78,6 +79,8 @@ export class Session {
   readonly npcs: NpcSystem;
   readonly ui: InventoryUI;
   readonly worldItems: WorldItemSystem;
+  /** B: cover volumes, hitboxes and bullet heights. */
+  readonly coverDebug: CoverDebug;
   readonly map: WorldData;
   /** Simulation speed (slow motion < 1). */
   timeScale = 1;
@@ -133,7 +136,7 @@ export class Session {
     px.unoutlined.push(this.projectiles.group, this.flash.group, this.npcFlash.group, this.particles.mesh);
     this.player.setPosition(wd.playerSpawn);
     this.player.regen = opts.regen;
-    this.playerCollider = { kind: 'circle', x: 0, z: 0, r: CONFIG.player.radius, height: 1.9, surface: 'wood', blocksBullets: false };
+    this.playerCollider = { kind: 'circle', x: 0, z: 0, r: CONFIG.player.radius, coverHeight: 1.9, surface: 'wood', blocksBullets: false };
     this.targets.addActor(this.player);
     this.scene.add(this.player.model.root);
     if (wd.horseSpawn) this.addHorse(new Horse(), wd.horseSpawn, wd.horseYaw);
@@ -143,6 +146,10 @@ export class Session {
     this.npcs = new NpcSystem(opts.npcs, this.world, this.nav, wd.cover);
     this.scene.add(this.npcs.group);
     for (const n of this.npcs.npcs) this.registerNpc(n);
+
+    this.coverDebug = new CoverDebug(this.world);
+    this.scene.add(this.coverDebug.group);
+    px.unoutlined.push(this.coverDebug.group);
 
     this.worldItems = new WorldItemSystem(this.world);
     this.scene.add(this.worldItems.group, this.worldItems.glints);
@@ -171,7 +178,7 @@ export class Session {
     h.place(at, yaw);
     this.horses.push(h);
     this.scene.add(h.model.root);
-    this.horseColliders.set(h, { kind: 'circle', x: at.x, z: at.z, r: CONFIG.horse.radius, height: 2, surface: 'wood', blocksBullets: false });
+    this.horseColliders.set(h, { kind: 'circle', x: at.x, z: at.z, r: CONFIG.horse.radius, coverHeight: 2, surface: 'wood', blocksBullets: false });
     h.model.onFootfall = () => {
       const m = h.model.root;
       const back = new THREE.Vector3(-Math.sin(m.rotation.y) * 0.7, 0.05, -Math.cos(m.rotation.y) * 0.7);
@@ -196,6 +203,7 @@ export class Session {
 
   /** One frame of play: inventory screens pause the world, otherwise fixed-step simulation. */
   frame(frameDt: number): void {
+    if (this.engine.input.consume('KeyB')) this.coverDebug.toggle();
     this.handleMenuKeys();
     if (this.ui.open) {
       this.ui.update(frameDt, this.engine.pointer(), { rotate: this.engine.input.consume('KeyR'), shift: this.engine.input.sprint }, this.engine.lowW, this.engine.lowH);
@@ -301,7 +309,7 @@ export class Session {
       if (p.mounted) this.dismount();
       else this.interactTarget?.interact();
     }
-    if (input.consume('KeyB')) {
+    if (input.consume('KeyG')) {
       const why = p.useBandage();
       if (why) this.showToast(why);
     }
@@ -551,6 +559,7 @@ export class Session {
     rig.update(animDt, lead, engine.pixelate);
     this.updateSun();
     this.updateOccluders(animDt, base, p.mounted);
+    this.coverDebug.update(animDt, this.targets.actors.map((a) => a.hitbox?.() ?? null), this.projectiles.live());
     engine.renderScene(this.scene);
 
     if (this.toast) {

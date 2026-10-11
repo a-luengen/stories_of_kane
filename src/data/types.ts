@@ -133,10 +133,13 @@ export type Routine =
   | { kind: 'lean'; at: Vec2; facing: number }
   /** Stand at a spot. */
   | { kind: 'idle'; at: Vec2; facing: number }
-  /** Walk between random points (each jittered), pausing in between. */
-  | { kind: 'wander'; points: Vec2[]; jitter?: number; pause?: [number, number] }
+  /**
+   * Walk between random points (each jittered), pausing in between. `inspect` (0..1): chance to
+   * crouch and look at the ground during a pause (also on patrols).
+   */
+  | { kind: 'wander'; points: Vec2[]; jitter?: number; pause?: [number, number]; inspect?: number }
   /** Walk the points in order, looping. */
-  | { kind: 'patrol'; points: Vec2[]; pause?: number };
+  | { kind: 'patrol'; points: Vec2[]; pause?: number; inspect?: number };
 
 export interface NpcLines {
   greet: string[];

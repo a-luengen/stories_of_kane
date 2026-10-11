@@ -9,8 +9,9 @@ import { GridContainer } from '../items/GridContainer';
 import { ammoItemFor, itemDef, itemForWeapon, weaponOf } from '../items/ItemDef';
 import { createItem, type ItemInstance } from '../items/ItemInstance';
 import type { Interactable } from '../Interaction';
-import { angleDelta, damp, dirToYaw, moveToward, yawToX, yawToZ } from '../util/math';
+import { angleDelta, damp, dirToYaw, lerp, moveToward, yawToX, yawToZ } from '../util/math';
 import { segmentVsCylinder, type CircleCollider, type CollisionWorld } from '../world/Colliders';
+import { coversFrom, findLowCover } from '../ai/LowCover';
 import type { NavGrid } from '../ai/NavGrid';
 import type { Horse } from './Horse';
 import { NpcModel } from './NpcModel';
@@ -113,6 +114,24 @@ export class Npc implements Target, Interactable {
   private fleeLeft = 0;
   private cowering = false;
   private deadLeft = 0;
+
+  // Crouching.
+  /** Wants to be crouched (the body blends there over CONFIG.player.crouch.blendTime). */
+  crouched = false;
+  /** 0 = standing … 1 = crouched. */
+  crouch = 0;
+  private flinchCrouchLeft = 0;
+  private inspectLeft = 0;
+  /** Low-cover spot (behind a barrel, fence, …) being held or walked to. */
+  private lowCover: Vec2 | null = null;
+  private lastLowCover: Vec2 | null = null;
+  /** Arrived at the low-cover spot. */
+  private inCover = false;
+  private lowCoverLeft = 0;
+  private lowCoverRetry = 0;
+  private coverCheckLeft = 0;
+  /** Standing up over cover to shoot (seconds left before ducking again). */
+  private popUpLeft = 0;
 
   private chest = new THREE.Vector3();
 
@@ -224,7 +243,7 @@ export class Npc implements Target, Interactable {
   /** The shootable volume (only the rider on horseback: horses can't be harmed). */
   hitbox(): Hitbox | null {
     if (!this.alive) return null;
-    const top = this.mode === 'hide' && this.cowering ? 1.1 : 1.85;
+    const top = CONFIG.player.crouch.standHeight * lerp(1, CONFIG.player.crouch.hitboxScale, this.crouch);
     const [y0, y1] = this.mount ? [1.0, 2.95] : [0, top];
     return { x: this.pos.x, z: this.pos.z, r: 0.38, y0, y1 };
   }
@@ -251,6 +270,7 @@ export class Npc implements Target, Interactable {
     if (!this.alive) return;
     this.calmTimer = 0;
     this.talkLeft = 0;
+    this.inspectLeft = 0;
     if (this.weapon && !this.weapon.dry) {
       if (this.mode !== 'hostile') {
         this.mode = 'hostile';
@@ -274,8 +294,12 @@ export class Npc implements Target, Interactable {
     this.clearPath();
   }
 
-  /** A player bullet landed close by: flinch and warn (never hostile on its own). */
+  /** A player bullet landed close by: flinch (armed ones may duck) and warn (never hostile on its own). */
   nearMiss(): void {
+    const nc = CONFIG.npc.crouch;
+    if (this.alive && this.weaponDef && this.canCrouch && Math.random() < nc.flinchChance) {
+      this.flinchCrouchLeft = Math.max(this.flinchCrouchLeft, rand(...nc.flinchTime));
+    }
     if (this.mode !== 'routine') return;
     this.flinch = 1;
     this.alertLeft = 2.5;
@@ -292,6 +316,7 @@ export class Npc implements Target, Interactable {
     this.mode = 'routine';
     this.drawTarget = 0;
     this.cowering = false;
+    this.leaveLowCover(0);
     this.lastSeen = null;
     this.calmTimer = 0;
     this.waitLeft = 1;
@@ -303,6 +328,7 @@ export class Npc implements Target, Interactable {
     this.mode = 'flee';
     this.fleeLeft = 2.2;
     this.cowering = false;
+    this.leaveLowCover(0);
     this.say(pick(this.lines.flee));
     this.clearPath();
   }
@@ -315,6 +341,8 @@ export class Npc implements Target, Interactable {
     this.clearPath();
     this.speech = null;
     this.drawTarget = 0;
+    this.leaveLowCover(0);
+    this.crouched = false; // eases out while falling
   }
 
   /** (Re)place at the spawn point with full health. */
@@ -326,6 +354,10 @@ export class Npc implements Target, Interactable {
     this.hp = this.maxHp;
     this.mode = 'routine';
     this.draw = this.drawTarget = 0;
+    this.crouched = false;
+    this.crouch = 0;
+    this.flinchCrouchLeft = this.inspectLeft = 0;
+    this.leaveLowCover(0);
     this.resetLoadout();
     this.clearPath();
     const r = this.def.routine;
@@ -437,8 +469,29 @@ export class Npc implements Target, Interactable {
         break;
     }
 
+    this.updateCrouch(dt);
     this.collider.x = this.pos.x;
     this.collider.z = this.pos.z;
+  }
+
+  /** Shotgunners rush and never crouch; riders sit. */
+  get canCrouch(): boolean {
+    if (this.mount) return false;
+    const w = this.weaponDef;
+    const scatter = w ? (Array.isArray(w.pellets) ? w.pellets[1] : w.pellets) > 1 : false;
+    return this.def.tactics !== 'rush' && !scatter;
+  }
+
+  private updateCrouch(dt: number): void {
+    this.flinchCrouchLeft -= dt;
+    this.popUpLeft -= dt;
+    let want = false;
+    if (this.mode === 'hide') want = this.cowering;
+    else if (this.mode === 'routine') want = this.inspectLeft > 0 && this.vel.lengthSq() < 0.04; // once stopped
+    else if (this.mode === 'hostile') want = this.inCover && this.popUpLeft <= 0;
+    if (this.flinchCrouchLeft > 0 && this.mode !== 'dead') want = true;
+    this.crouched = want && this.canCrouch;
+    this.crouch = moveToward(this.crouch, this.crouched ? 1 : 0, dt / CONFIG.player.crouch.blendTime);
   }
 
   private routine(dt: number, ctx: NpcContext, dist: number): void {
@@ -451,6 +504,7 @@ export class Npc implements Target, Interactable {
 
     // Talking, startled or just noticing the player: stop and face them.
     if (this.talkLeft > 0 || this.alertLeft > 0 || (noticing && r.kind !== 'lean' && r.kind !== 'idle')) {
+      this.inspectLeft = 0;
       this.lookYaw = towardPlayer;
       this.halt(dt, ctx);
       return;
@@ -471,7 +525,9 @@ export class Npc implements Target, Interactable {
     if (!this.dest) {
       this.halt(dt, ctx);
       this.waitLeft -= dt;
+      this.inspectLeft -= dt;
       if (this.waitLeft > 0) return;
+      this.inspectLeft = 0;
       let target: Vec2;
       if (r.kind === 'wander') {
         const [x, z] = pick(r.points);
@@ -486,6 +542,11 @@ export class Npc implements Target, Interactable {
     if (this.followPath(dt, CONFIG.npc.walkSpeed, ctx)) {
       this.clearPath();
       this.waitLeft = r.kind === 'wander' ? rand(...(r.pause ?? [2, 5])) : (r.pause ?? 1);
+      // Now and then: crouch and look at something on the ground, then stand up and go on.
+      if (Math.random() < (r.inspect ?? 0)) {
+        this.inspectLeft = rand(...CONFIG.npc.crouch.inspectTime);
+        this.waitLeft = Math.max(this.waitLeft, this.inspectLeft + 0.6);
+      }
     }
     this.lookYaw = this.moveYaw;
   }
@@ -513,6 +574,8 @@ export class Npc implements Target, Interactable {
     const tactics = this.def.tactics ?? 'strafe';
     if (this.mount) {
       // nothing: the mounted AI drives the horse
+    } else if (tactics !== 'rush' && this.canCrouch && this.sees && this.holdLowCover(dt, ctx, dist, lo, hi)) {
+      // Behind (or on the way to) a barrel, fence, …: crouched there, popping up to shoot.
     } else if (tactics === 'cover' && this.sees && dist <= hi + 4 && this.takeCover(dt, ctx, lo, hi)) {
       speed = nc.combatSpeed;
     } else if (!this.sees) {
@@ -558,6 +621,7 @@ export class Npc implements Target, Interactable {
     } else {
       this.halt(dt, ctx);
     }
+    if (!this.sees && this.lowCover) this.leaveLowCover(1);
 
     // Look / aim.
     if (this.sees) this.lookYaw = dirToYaw(this.aimPoint.x - this.pos.x, this.aimPoint.z - this.pos.z);
@@ -578,14 +642,20 @@ export class Npc implements Target, Interactable {
     const fx = yawToX(yaw);
     const fz = yawToZ(yaw);
     const reach = 0.4 + muzzleOffset(def.look);
-    const origin = new THREE.Vector3(this.pos.x + fx * reach + fz * 0.18, this.mount ? 2.34 : 1.38, this.pos.z + fz * reach - fx * 0.18);
-    // Don't waste shots into a wall right in front.
+    const muzzleY = this.mount ? 2.34 : 1.38 - CONFIG.player.crouchDrop * this.crouch;
+    const origin = new THREE.Vector3(this.pos.x + fx * reach + fz * 0.18, muzzleY, this.pos.z + fz * reach - fx * 0.18);
     if (ctx.world.raycast(origin.x, origin.y, origin.z, this.aimPoint.x, this.aimPoint.y, this.aimPoint.z)) {
-      this.shotDelay = 0.3;
+      // Crouched behind cover with no clear shot: stand up over it (then shoot) …
+      if (this.inCover && this.crouch > 0.02) this.popUpLeft = Math.max(this.popUpLeft, 0.4);
+      // … otherwise don't waste shots into a wall right in front.
+      else this.shotDelay = 0.3;
       return;
     }
     const moving = this.vel.lengthSq() > 0.25;
-    let spreadMul = (this.def.inaccuracy ?? nc.inaccuracy) * (moving ? nc.movingSpreadMul : 1);
+    // Crouching steadies the aim (moving crouched keeps part of it), as for the player.
+    const pc = CONFIG.player.crouch;
+    const stance = moving ? lerp(nc.movingSpreadMul, pc.movingSpreadMul, this.crouch) : lerp(1, pc.spreadMul, this.crouch);
+    let spreadMul = (this.def.inaccuracy ?? nc.inaccuracy) * stance;
     // Same horseback penalty as the player.
     if (this.mount) spreadMul = (this.def.inaccuracy ?? nc.inaccuracy) * (CONFIG.player.spreadMountedMul + this.mount.motor.speed * CONFIG.player.spreadMountedPerSpeed) * 0.5;
     const shot = weapon.fire(origin, this.aimPoint, spreadMul, yaw);
@@ -593,6 +663,8 @@ export class Npc implements Target, Interactable {
       ctx.fire(this, shot);
       this.recoil = 1;
       this.shotDelay = def.fireInterval + rand(...def.ai.extraDelay);
+      // Popped up over cover: stay up a moment, then duck.
+      if (this.inCover && this.popUpLeft > 0) this.popUpLeft = nc.crouch.popUpHold;
     }
   }
 
@@ -660,6 +732,66 @@ export class Npc implements Target, Interactable {
 
   private coverSpot: Vec2 | null = null;
   private coverLeft = 0;
+
+  /**
+   * Riflemen and gunslingers: crouch behind low cover (barrels, fences, troughs) at their range.
+   * They hold the spot for a while, then stand up and reposition; a spot that stops covering
+   * (the player moved round it, or came too close) is left at once. False: no spot (or not now).
+   */
+  private holdLowCover(dt: number, ctx: NpcContext, dist: number, lo: number, hi: number): boolean {
+    const cc = CONFIG.npc.crouch;
+    const p = ctx.player.pos;
+    this.lowCoverLeft -= dt;
+    this.coverCheckLeft -= dt;
+    if (this.lowCover && this.coverCheckLeft <= 0) {
+      this.coverCheckLeft = 0.5;
+      if (dist < lo * 0.6 || !coversFrom(ctx.world, this.lowCover, p, playerChest(ctx.player, this.chest).y)) this.leaveLowCover(rand(0.8, 1.5));
+    }
+    if (this.lowCover && this.lowCoverLeft <= 0) this.leaveLowCover(rand(1.5, 3)); // reposition
+    if (!this.lowCover) {
+      this.lowCoverRetry -= dt;
+      if (this.lowCoverRetry > 0) return false;
+      // Gunslingers mix it up: sometimes cover, sometimes sidestepping in the open.
+      if (this.def.tactics !== 'cover' && Math.random() > cc.strafeCoverChance) {
+        this.lowCoverRetry = rand(3, 5);
+        return false;
+      }
+      const avoid = ctx.colliders.filter((c) => c !== this.collider).map((c): Vec2 => [c.x, c.z]);
+      if (this.lastLowCover) avoid.push(this.lastLowCover);
+      const spot = findLowCover(ctx.world, ctx.nav, {
+        from: [this.pos.x, this.pos.z],
+        threat: p,
+        range: [lo * 0.8, hi + 2],
+        maxTravel: cc.maxTravel,
+        avoid,
+      });
+      if (!spot) {
+        this.lowCoverRetry = rand(1.5, 2.5);
+        return false;
+      }
+      this.lowCover = spot;
+      this.lowCoverLeft = rand(...cc.holdTime);
+      this.coverCheckLeft = 0.5;
+      this.setDest(spot, ctx);
+    }
+    if (this.distTo(this.lowCover) < 0.35) {
+      this.inCover = true;
+      this.clearPath();
+    } else if (!this.inCover && !this.dest) {
+      this.setDest(this.lowCover, ctx);
+    }
+    return true;
+  }
+
+  /** Stand up and go (looking for cover again after `retry` seconds). */
+  private leaveLowCover(retry: number): void {
+    if (this.lowCover) this.lastLowCover = this.lowCover;
+    if (this.lowCover && !this.inCover) this.clearPath();
+    this.lowCover = null;
+    this.inCover = false;
+    this.popUpLeft = 0;
+    this.lowCoverRetry = retry;
+  }
 
   /**
    * Riflemen: hold a spot next to cover, at their preferred range, that still sees the player.
@@ -731,7 +863,8 @@ export class Npc implements Target, Interactable {
       [wx, wz] = this.path[0];
       d = Math.hypot(wx - this.pos.x, wz - this.pos.z);
     }
-    // Ease in on the final waypoint.
+    // Crouched: half speed. Ease in on the final waypoint.
+    speed *= lerp(1, CONFIG.player.crouch.speedMul, this.crouch);
     const v = this.path.length === 1 ? Math.min(speed, d * 3) : speed;
     this.steer(dt, ((wx - this.pos.x) / d) * v, ((wz - this.pos.z) / d) * v, ctx);
 
@@ -786,6 +919,8 @@ export class Npc implements Target, Interactable {
         talking: false,
         flinch: this.flinch,
         cower: false,
+        crouch: 0,
+        inspect: false,
         dead: false,
         mounted: true,
       });
@@ -805,6 +940,8 @@ export class Npc implements Target, Interactable {
       talking: this.talkLeft > 0,
       flinch: this.flinch,
       cower: this.mode === 'hide' && this.cowering,
+      crouch: this.crouch,
+      inspect: this.mode === 'routine' && this.inspectLeft > 0,
       dead: this.mode === 'dead',
       mounted: false,
     });

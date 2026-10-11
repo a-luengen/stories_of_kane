@@ -180,6 +180,22 @@ export const CONFIG = {
     chestHeight: 1.2,
     speechTime: 3.2,
     talkTime: 4,
+    /** Crouch AI (the crouch itself works like the player's: CONFIG.player.crouch). */
+    crouch: {
+      /** Chance a gunslinger ('strafe') heads for low cover when one is near (riflemen always try). */
+      strafeCoverChance: 0.6,
+      /** Seconds in one low-cover spot before standing up to reposition. */
+      holdTime: [5, 9] as [number, number],
+      /** Max walk to a low-cover spot. */
+      maxTravel: 10,
+      /** Stay up this long after a shot over cover, then duck again. */
+      popUpHold: 0.35,
+      /** Chance that a bullet landing close makes an armed NPC crouch-flinch, and for how long. */
+      flinchChance: 0.6,
+      flinchTime: [0.5, 0.9] as [number, number],
+      /** Crouching to look at the ground during a routine pause. */
+      inspectTime: [2, 3.5] as [number, number],
+    },
   },
 
   horse: {

@@ -22,6 +22,10 @@ export interface NpcPose {
   /** 0..1 startle (arms up to the head). */
   flinch: number;
   cower: boolean;
+  /** 0 = standing … 1 = crouched (the NPC's crouch blend). */
+  crouch: number;
+  /** Crouched, looking at something on the ground. */
+  inspect: boolean;
   dead: boolean;
   /** Sitting in a saddle (yaws are relative to the horse). */
   mounted: boolean;
@@ -101,7 +105,8 @@ export class NpcModel {
     if (moving) this.phase += dt * p.speed * (run ? 1.9 : 2.4);
     this.stride = damp(this.stride, moving ? clamp(p.speed / 4.3, 0.3, 1) : 0, 8, dt);
     this.run = damp(this.run, run ? 1 : 0, 6, dt);
-    this.crouch = damp(this.crouch, p.cower ? 1 : p.flinch * 0.35, 6, dt);
+    // The NPC blends its crouch already; a startle dips the knees a little on top.
+    this.crouch = Math.max(p.crouch, damp(this.crouch, p.flinch * 0.35, 6, dt));
     const swing = Math.sin(this.phase) * this.stride * 0.85; // arm swing, opposite to the legs
     const pelvis = this.rig.poseLegs(
       legTargets({
@@ -150,7 +155,13 @@ export class NpcModel {
       l = { x: -0.9, y: 0.3, z: -0.3 };
     }
     if (p.talking && !aiming) l = { x: -0.7 + Math.sin(this.time * 5) * 0.25, y: 0, z: -0.25 };
-    const cover = Math.max(p.flinch, this.crouch);
+    if (p.inspect && !aiming) {
+      // One hand reaches to the ground in front and pokes about; the other rests on the knee.
+      r = { x: -(0.75 + lean) + Math.sin(this.time * 2.3) * 0.12, y: 0, z: 0.12 + Math.sin(this.time * 1.7) * 0.08 };
+      l = { x: -(0.35 + lean), y: 0, z: -0.25 };
+    }
+    // Arms over the head: startled, or cowering in a hiding spot.
+    const cover = Math.max(p.flinch, p.cower ? this.crouch : 0);
     if (cover > 0.01 && !aiming) {
       r = mix(r, { x: -2.6, y: 0, z: -0.5 }, cover);
       l = mix(l, { x: -2.6, y: 0, z: 0.5 }, cover);
@@ -158,7 +169,7 @@ export class NpcModel {
     const s = p.draw > 0 && p.draw < 1 ? 22 : 14;
     armR.rotation.set(damp(armR.rotation.x, r.x, s, dt), damp(armR.rotation.y, r.y, s, dt), damp(armR.rotation.z, r.z, s, dt));
     armL.rotation.set(damp(armL.rotation.x, l.x, 14, dt), damp(armL.rotation.y, l.y, 14, dt), damp(armL.rotation.z, l.z, 14, dt));
-    head.rotation.x = p.flinch * 0.3 - p.recoil * 0.08 + (p.lean ? 0.12 : 0) - lean * 0.8;
+    head.rotation.x = p.flinch * 0.3 - p.recoil * 0.08 + (p.lean ? 0.12 : 0) - lean * (p.inspect ? 0.2 : 0.8);
 
     // Death: the knees buckle first, then the body tips over backwards (about the torso's right
     // axis, pivoting at the feet); lying down, the legs relax half straight.

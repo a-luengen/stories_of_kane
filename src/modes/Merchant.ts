@@ -73,6 +73,8 @@ export class Merchant implements Interactable {
       talking: false,
       flinch: 0,
       cower: false,
+      crouch: 0,
+      inspect: false,
       dead: false,
       mounted: false,
     });

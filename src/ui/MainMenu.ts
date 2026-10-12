@@ -15,6 +15,7 @@ import { drawCursor } from './widgets';
 export class MainMenu {
   private scene = new THREE.Scene();
   private tumbleweeds: Tumbleweed[];
+  /** The desert wind behind the title (gusts as tumbleweeds roll by). */
   private list: MenuList;
   private dialog: Dialog | null = null;
   private time = 0;

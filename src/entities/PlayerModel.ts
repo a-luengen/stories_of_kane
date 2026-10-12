@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { AppearanceConfig, WeaponDef } from '../data/types';
+import { footfall } from '../audio/footSurface';
 import { CharacterRig } from '../render/CharacterRig';
 import { CROUCH_LEAN, legTargets, type GaitState } from '../render/HumanGait';
 import { angleDelta, clamp, damp, dampAngle, lerp, moveToward, smoothstep } from '../util/math';
@@ -41,6 +42,8 @@ export interface PlayerPose {
  */
 export class PlayerModel {
   readonly rig: CharacterRig;
+  /** A foot hit the ground (−1 left, +1 right), from the walk cycle. */
+  onStep: ((side: -1 | 1) => void) | null = null;
 
   private phase = 0;
   private time = 0;
@@ -102,7 +105,10 @@ export class PlayerModel {
 
       // Gait: knees flex in the swing, feet flat in stance; the planted foot sets the hip height
       // (that's the bob). Sprinting lifts the knees higher with a longer stride.
+      const prevPhase = this.phase;
       if (moving) this.phase += dt * p.speed * (p.sprint ? 1.9 : 2.3) * dir;
+      const foot = moving && !p.dead ? footfall(prevPhase, this.phase) : 0;
+      if (foot !== 0) this.onStep?.(foot);
       this.stride = damp(this.stride, moving ? clamp(p.speed / 4.3, 0.35, 1) : 0, 8, dt);
       this.run = damp(this.run, p.sprint && moving ? 1 : 0, 6, dt);
       const pelvis = this.rig.poseLegs(legTargets(this.gait(this.stride, this.run, p)), dt);

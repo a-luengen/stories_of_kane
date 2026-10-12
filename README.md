@@ -34,6 +34,15 @@ deploys there (`.github/workflows/deploy.yml`). One-time setup: repo Settings �
 | P | Toggle pixelation (debug) |
 | O / L | Toggle palette quantization / outlines |
 | F3 | Debug overlay (horse heading, input, turn radius, speed, FPS, NPC states) |
+| M | Mute / unmute all sound (a crossed-out speaker shows on the HUD) |
+| F4 | Sound debug: playing voices (bus, sample or synth, volume, distance) and rings at their sources |
+
+## Sound
+
+- `src/audio/AudioEngine.ts` (owned by `Engine`, lives for the whole app) runs one Web Audio graph: master ← ui, master ← world ← effects / voices / ambience. It starts on the first click or key press (browsers block audio before that).
+- Every sound is defined in `src/data/sounds.ts`: bus, volume, variation, limits (24 voices, per-sound caps and cooldowns) and a synthesized **recipe**. Recorded samples are optional: list them in `src/data/soundManifest.ts` and drop the files in `public/sounds/` (see its README). Until a sample loads — or if it's missing — the recipe plays, so the game sounds complete with an empty folder.
+- `src/audio/SessionAudio.ts` is a session's sound layer: the player is the listener (volume falls off with distance, sounds pan by their screen-side, far sounds get duller). Gunshots carry across the map; beyond 25 units they arrive late (sound travels at `CONFIG.audio.soundSpeed`), muffled and with an echo. Bullets passing within 1.5 units of your head whizz on the side they passed. Draw, holster and reload sounds come from the guns' state, so NPCs make them too. Footsteps come from the walk cycle (a sound each time a foot lands; louder running, soft crouching) on dirt or on the wooden porches (`WorldData.floors`); NPC steps are quieter. Horses play a hoofbeat per hoof (four even beats at a walk, a rolling gallop), snort when mounted and now and then while standing. NPCs never speak words: each speech bubble is **murmured** (`src/audio/murmur.ts`): a formant voice shaped by the line — a syllable per vowel group, pauses at punctuation, questions rising — in that NPC's own voice (pitch from body type, a per-NPC offset and vowel timbre, all from a seed) and in the line's mood (greet relaxed, warn loud and clipped, hostile low and harsh, flee high and fast, calm slow and soft). The bubble lasts as long as the murmur. Containers creak / scrape / unlatch open (and thump shut when wave mode restocks them); the inventory, loot and shop screens give feedback for lifting, setting down, rotating, equipping (clothes rustle, guns click), unloading, coins and a buzz when something doesn't fit. Wave mode has countdown ticks, a bell at the start and a sting when a wave is cleared.
+- Volumes (master, effects, voices, ambience) are in the pause menu and remembered; M mutes. Pausing or opening an inventory holds the world sounds; UI sounds keep playing.
 
 ## Layout
 

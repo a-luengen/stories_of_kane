@@ -23,6 +23,9 @@ export class Merchant implements Interactable {
     },
     null,
   );
+  /** Murmured when you open the shop. */
+  readonly greetings = ['What can I get you, partner?', 'Need supplies? Got plenty.', 'Back again! Good to see you.'];
+  private greetIdx = 0;
   readonly range = CONFIG.npc.talkRange;
   readonly priority = 2;
   readonly promptHeight = 2.3;
@@ -46,6 +49,11 @@ export class Merchant implements Interactable {
 
   get label(): string {
     return `Trade with ${this.name}`;
+  }
+
+  /** The next greeting (they take turns). */
+  greeting(): string {
+    return this.greetings[this.greetIdx++ % this.greetings.length];
   }
 
   canInteract(): boolean {

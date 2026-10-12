@@ -132,6 +132,8 @@ export class GameStateManager implements ModeHost {
         this.gameOverScreen!.frame();
         break;
     }
+    // World sounds hold while paused or while an inventory / shop screen is open (UI keeps playing).
+    this.engine.audio.setWorldPaused(this.state === 'Paused' || this.state === 'GameOver' || (this.state === 'Playing' && !!this.mode?.session.ui.open));
     if (this.pending) {
       const p = this.pending;
       this.pending = null;

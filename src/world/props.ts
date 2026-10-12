@@ -17,6 +17,17 @@ export interface Occluder {
   maxX: number;
   maxZ: number;
   height: number;
+  /** The building's walkable porch (wooden floor). */
+  floor?: Floor;
+}
+
+/** A walkable area with its own footstep surface (porches, boardwalks). */
+export interface Floor {
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+  surface: 'wood';
 }
 
 
@@ -35,6 +46,8 @@ export interface WorldData {
   horseYaw: number;
   /** Lootable barrels, crates, chests, ammo boxes and weapon crates. */
   containers: LootContainer[];
+  /** Wooden floors (footsteps); everywhere else is dirt. */
+  floors: Floor[];
 }
 
 export function shade(hex: number, f: number): number {
@@ -154,10 +167,23 @@ export function building(
     cw.addCircle(p.x, p.z, 0.12, 2.8, 'wood');
   }
 
+  // The porch floor, in world space (yaw is a multiple of 90°).
+  const corners = [
+    [-(w + 0.3) / 2, d / 2],
+    [(w + 0.3) / 2, d / 2 + pd],
+  ].map(([lx, lz]) => new THREE.Vector3(lx, 0, lz).applyMatrix4(m));
+  const floor: Floor = {
+    minX: Math.min(corners[0].x, corners[1].x),
+    minZ: Math.min(corners[0].z, corners[1].z),
+    maxX: Math.max(corners[0].x, corners[1].x),
+    maxZ: Math.max(corners[0].z, corners[1].z),
+    surface: 'wood',
+  };
+
   const mat = fadeableToon();
   const mesh = batch.build(mat);
   const bb = new THREE.Box3().setFromObject(mesh);
-  return { mesh, fade: mat.userData.uFade, minX: bb.min.x, minZ: bb.min.z, maxX: bb.max.x, maxZ: bb.max.z, height: bb.max.y };
+  return { mesh, fade: mat.userData.uFade, minX: bb.min.x, minZ: bb.min.z, maxX: bb.max.x, maxZ: bb.max.z, height: bb.max.y, floor };
 }
 
 /** Fence between two axis-aligned points; returns post-top positions (for bottles). */

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { AppearanceConfig, WeaponDef } from '../data/types';
+import { footfall } from '../audio/footSurface';
 import { CharacterRig } from '../render/CharacterRig';
 import { CROUCH_LEAN, legTargets } from '../render/HumanGait';
 import { angleDelta, clamp, damp, dampAngle, lerp, moveToward, smoothstep } from '../util/math';
@@ -41,6 +42,8 @@ export interface NpcPose {
  */
 export class NpcModel {
   readonly rig: CharacterRig;
+  /** A foot hit the ground (−1 left, +1 right), from the walk cycle. */
+  onStep: ((side: -1 | 1) => void) | null = null;
   private weapon: WeaponDef | null = null;
   private offHand: WeaponDef | null = null;
 
@@ -108,7 +111,10 @@ export class NpcModel {
 
     // Gait (knees, feet flat in stance; the planted foot sets the hip height).
     const run = p.speed > 3.2;
+    const prevPhase = this.phase;
     if (moving) this.phase += dt * p.speed * (run ? 1.9 : 2.4);
+    const foot = moving && !p.mounted ? footfall(prevPhase, this.phase) : 0;
+    if (foot !== 0) this.onStep?.(foot);
     this.stride = damp(this.stride, moving ? clamp(p.speed / 4.3, 0.3, 1) : 0, 8, dt);
     this.run = damp(this.run, run ? 1 : 0, 6, dt);
     // The NPC blends its crouch already; a startle dips the knees a little on top.

@@ -13,6 +13,7 @@ import { angleDelta, damp, dirToYaw, lerp, moveToward, yawToX, yawToZ } from '..
 import { segmentVsCylinder, type CircleCollider, type CollisionWorld } from '../world/Colliders';
 import { coversFrom, findLowCover } from '../ai/LowCover';
 import type { NavGrid } from '../ai/NavGrid';
+import type { Mood } from '../audio/murmur';
 import type { Horse } from './Horse';
 import { NpcModel } from './NpcModel';
 import type { BurstKind } from './Particles';
@@ -69,6 +70,8 @@ export class Npc implements Target, Interactable {
   onLoot: (npc: Npc) => void = () => {};
   /** Set by the mode: open this merchant's shop (NpcDef.shop). */
   onTrade: (npc: Npc) => void = () => {};
+  /** Set by the session: murmur a line; returns how long it takes (the bubble lasts as long). */
+  onSpeak: ((npc: Npc, text: string, mood: Mood) => number) | null = null;
   readonly pos = new THREE.Vector3();
   readonly prevPos = new THREE.Vector3();
   readonly vel = new THREE.Vector2();
@@ -221,6 +224,11 @@ export class Npc implements Target, Interactable {
     return this.mode !== 'dead';
   }
 
+  /** Gun out (or coming out). */
+  get drawn(): boolean {
+    return this.drawTarget === 1;
+  }
+
   /** True while aiming before the first shot (HUD shows a warning mark). */
   get telegraphing(): boolean {
     return this.mode === 'hostile' && this.draw >= 1 && this.telegraphLeft > 0;
@@ -251,7 +259,7 @@ export class Npc implements Target, Interactable {
       return;
     }
     this.talkLeft = CONFIG.npc.talkTime;
-    this.say(this.lines.greet[this.greetIdx++ % this.lines.greet.length], CONFIG.npc.talkTime);
+    this.say(this.lines.greet[this.greetIdx++ % this.lines.greet.length], 'greet', CONFIG.npc.talkTime);
     if (this.def.shop) this.onTrade(this);
   }
 
@@ -295,7 +303,7 @@ export class Npc implements Target, Interactable {
     if (this.weapon && !this.weapon.dry) {
       if (this.mode !== 'hostile') {
         this.mode = 'hostile';
-        this.say(pick(this.lines.hostile));
+        this.say(pick(this.lines.hostile), 'hostile');
         this.drawTarget = 1;
         this.shotDelay = 0;
         this.telegraphLeft = this.weaponDef!.ai.telegraph;
@@ -326,7 +334,7 @@ export class Npc implements Target, Interactable {
     this.alertLeft = 2.5;
     this.talkLeft = 0;
     if (this.warnCooldown <= 0) {
-      this.say(pick(this.lines.warn));
+      this.say(pick(this.lines.warn), 'warn');
       this.warnCooldown = CONFIG.npc.warnCooldown;
     }
   }
@@ -342,7 +350,7 @@ export class Npc implements Target, Interactable {
     this.calmTimer = 0;
     this.waitLeft = 1;
     this.clearPath();
-    if (!silent) this.say(pick(this.lines.calm));
+    if (!silent) this.say(pick(this.lines.calm), 'calm');
   }
 
   private startFleeing(): void {
@@ -350,7 +358,7 @@ export class Npc implements Target, Interactable {
     this.fleeLeft = 2.2;
     this.cowering = false;
     this.leaveLowCover(0);
-    this.say(pick(this.lines.flee));
+    this.say(pick(this.lines.flee), 'flee');
     this.clearPath();
   }
 
@@ -392,7 +400,7 @@ export class Npc implements Target, Interactable {
       this.mode = 'hostile';
       this.drawTarget = 1;
       this.telegraphLeft = this.weaponDef.ai.telegraph;
-      if (Math.random() < 0.6) this.say(pick(this.lines.hostile));
+      if (Math.random() < 0.6) this.say(pick(this.lines.hostile), 'hostile');
     }
   }
 
@@ -433,9 +441,11 @@ export class Npc implements Target, Interactable {
     this.model.face(h.heading);
   }
 
-  private say(text: string, time = CONFIG.npc.speechTime): void {
+  /** Show a speech bubble and murmur it; the bubble lasts as long as the murmur (plus a beat). */
+  private say(text: string, mood: Mood, time = CONFIG.npc.speechTime): void {
     this.speech = text;
-    this.speechLeft = time;
+    const spoken = this.onSpeak?.(this, text, mood);
+    this.speechLeft = spoken !== undefined ? Math.max(1, spoken + CONFIG.npc.speechTail) : time;
   }
 
   // ---------------------------------------------------------------- simulation

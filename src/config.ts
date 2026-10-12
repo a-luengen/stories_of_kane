@@ -118,6 +118,23 @@ export const CONFIG = {
     weaponSwapTime: 0.4,
   },
 
+  audio: {
+    /** Voices playing at once; beyond this the quietest/oldest is replaced. */
+    maxVoices: 24,
+    /** Seconds for the world sounds to fade out / in when the game pauses / resumes. */
+    pauseFade: 0.08,
+    /** Distance (units) at which a sound is panned fully to one side. */
+    panRange: 14,
+    /** Cutoff (Hz) a sound is dulled to at its max distance. */
+    farLowpass: 900,
+    /** Gunshots further than this are "distant": delayed, muffled, with an echo tail. */
+    distantShot: 25,
+    /** Units per second sound travels (slower than real, so distant shots audibly lag). */
+    soundSpeed: 120,
+    /** A bullet passing this close to the player's head whizzes. */
+    whizzRadius: 1.5,
+  },
+
   /** Two guns in one weapon slot (both `dualWieldable`). */
   weapons: {
     /** Dual wielding fires every (slower gun's interval × this), alternating hands. */
@@ -196,6 +213,8 @@ export const CONFIG = {
     eyeHeight: 1.55,
     chestHeight: 1.2,
     speechTime: 3.2,
+    /** A speech bubble stays this long after its murmur ends. */
+    speechTail: 0.6,
     talkTime: 4,
     /** Crouch AI (the crouch itself works like the player's: CONFIG.player.crouch). */
     crouch: {

@@ -76,6 +76,8 @@ export class HorseModel {
   private lean = 0;
   /** Called once per stride beat at speed (for hoof dust). */
   onFootfall: ((localX: number, localZ: number) => void) | null = null;
+  /** A hoof landed: leg index (0-1 front, 2-3 hind) and the gait speed (0 walk … 1 gallop). */
+  onHoof: ((leg: number, speed01: number) => void) | null = null;
 
   constructor() {
     const coat = PAL.woodLight;
@@ -169,6 +171,14 @@ export class HorseModel {
     }
 
     const gallopMix = clamp((s - 0.35) / 0.4, 0, 1);
+    // Each hoof lands as its leg reaches the front of its swing (a quarter into its cycle), so the
+    // beats follow the gait: four even beats at a walk, pairs at a trot, a rolling three at a gallop.
+    if (this.onHoof && moving && s > 0.02) {
+      for (let i = 0; i < 4; i++) {
+        const off = lerp(WALK_OFFSETS[i], GALLOP_OFFSETS[i], gallopMix);
+        if (Math.floor(prevPhase + off - 0.25) !== Math.floor(this.phase + off - 0.25)) this.onHoof(i, s);
+      }
+    }
     const amp = moving ? lerp(0.25, 0.85, gaitDrive) : 0;
     this.legs.forEach((leg, i) => {
       const off = lerp(WALK_OFFSETS[i], GALLOP_OFFSETS[i], gallopMix);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { voiceFor } from '../audio/voices';
 import { MountedAI, routeDriver } from '../ai/MountedAI';
 import { NavGrid } from '../ai/NavGrid';
 import { CONFIG } from '../config';
@@ -83,7 +84,10 @@ export class WaveMode implements GameMode {
     // Starting kit: the standard revolver + 2 boxes, plus one bandage, $0.
     s.player.inventory.placeAnywhere(createItem('bandage', 1));
     this.horseNav = new NavGrid(s.world, s.map.half, 0.5, 0.85);
-    this.merchant = new Merchant(OUTPOST_MERCHANT.stand.clone(), OUTPOST_MERCHANT.facing, () =>
+    this.merchant = new Merchant(OUTPOST_MERCHANT.stand.clone(), OUTPOST_MERCHANT.facing, () => {
+      // A murmured greeting as the shop opens.
+      const m = this.merchant;
+      s.sound.murmur(m, m.position, m.greeting(), voiceFor(`trader:${m.name}`, 'male'), 'greet', true);
       s.openUi(() =>
         s.ui.openShop({
           economy: this.economy,
@@ -92,8 +96,8 @@ export class WaveMode implements GameMode {
           title: this.merchant.name,
           merchantName: this.merchant.name,
         }),
-      ),
-    );
+      );
+    });
     s.scene.add(this.merchant.root);
     // Containers hold loot for the wave being fought (restocked for the next one in each break).
     for (const c of s.map.containers) c.wave = this.director.wave;
@@ -134,6 +138,8 @@ export class WaveMode implements GameMode {
 
   // ------------------------------------------------------------------------------ simulation
 
+  private lastTick = -1;
+
   private get alive(): Enemy[] {
     return this.enemies.filter((e) => e.npc.alive);
   }
@@ -141,6 +147,12 @@ export class WaveMode implements GameMode {
   private step(dt: number): void {
     this.time += dt;
     this.handle(this.director.update(dt, this.alive.length));
+    // Countdown ticks: one per second, a sharper one on the last.
+    if (this.director.phase === 'countdown') {
+      const sec = Math.ceil(this.director.timer);
+      if (sec !== this.lastTick && sec >= 1 && sec <= 5) this.session.sound.waveCue(sec === 1 ? 'tickLast' : 'tick');
+      this.lastTick = sec;
+    } else this.lastTick = -1;
     this.merchant.open = this.director.phase === 'intermission' && !this.session.player.dead;
     if (this.banner) {
       this.banner.left -= dt;
@@ -159,6 +171,7 @@ export class WaveMode implements GameMode {
           break;
         case 'waveStart':
           this.showBanner(`WAVE ${e.wave}`, `${e.count} OUTLAWS INCOMING`, 2);
+          this.session.sound.waveCue('bell');
           break;
         case 'spawn':
           this.spawnEnemy(e.enemy, e.wave);
@@ -167,8 +180,12 @@ export class WaveMode implements GameMode {
           this.economy.earn(e.bonus);
           this.pop(`+$${e.bonus}`);
           this.showBanner('WAVE CLEARED', `+$${e.bonus}   E: TRADE AT THE WAGON`, CONFIG.wave.clearedBanner);
-          // Lids shut, fresh loot (for the coming wave) on the next open.
-          for (const c of this.session.map.containers) c.restock(this.director.wave + 1);
+          this.session.sound.waveCue('cleared');
+          // Lids shut (the ones you can hear), fresh loot (for the coming wave) on the next open.
+          for (const c of this.session.map.containers) {
+            if (c.opened && c.position.distanceTo(this.session.player.pos) < 22) this.session.sound.lidClose(c.position);
+            c.restock(this.director.wave + 1);
+          }
           break;
         case 'horseArrives':
           this.horseArrives();

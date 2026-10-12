@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { AudioEngine } from '../audio/AudioEngine';
+import { setUiSoundSink } from '../audio/uiSound';
 import { CameraRig } from '../CameraRig';
 import { CONFIG } from '../config';
 import { Input } from '../Input';
@@ -6,6 +8,7 @@ import { IconRenderer } from '../items/IconRenderer';
 import { PixelPass } from '../PixelPass';
 import { DebugOverlay } from '../ui/DebugOverlay';
 import { Hud } from '../ui/Hud';
+import { SoundDebug } from '../ui/SoundDebug';
 import type { UiPointer } from '../ui/InventoryUI';
 
 /**
@@ -21,6 +24,10 @@ export class Engine {
   readonly hud: Hud;
   readonly debug: DebugOverlay;
   readonly icons: IconRenderer;
+  /** Sound for the whole app (starts on the first click / key press). */
+  readonly audio = new AudioEngine();
+  /** F4: playing voices and where they come from. */
+  readonly soundDebug: SoundDebug;
   pixelate = CONFIG.render.pixelate;
   lowW = CONFIG.render.baseWidth;
   lowH = CONFIG.render.baseHeight;
@@ -44,6 +51,8 @@ export class Engine {
     this.input = new Input(container);
     this.hud = new Hud(container);
     this.debug = new DebugOverlay(container);
+    this.soundDebug = new SoundDebug(container);
+    setUiSoundSink((id) => this.audio.play(id));
     this.icons = new IconRenderer(this.renderer);
     this.icons.warm([8, 16]);
     window.addEventListener('resize', () => this.resize());
@@ -69,6 +78,7 @@ export class Engine {
     Object.assign(this.renderer.domElement.style, { width: `${cssW}px`, height: `${cssH}px`, left, top });
     this.hud.setSize(this.lowW, this.lowH, cssW, cssH, left, top);
     this.debug.setSize(bufW, bufH, cssW, cssH, left, top);
+    this.soundDebug.setSize(bufW, bufH, cssW, cssH, left, top);
     this.rig.setViewport(this.lowW, this.lowH);
     this.pixelPass.setSize(this.lowW, this.lowH, this.scale);
   }
@@ -81,6 +91,8 @@ export class Engine {
       this.lastTime = now;
       this.handleToggles();
       frame(dt);
+      this.audio.update();
+      this.soundDebug.draw(this.rig.view, this.audio);
     });
   }
 
@@ -91,6 +103,8 @@ export class Engine {
     if (i.consume('KeyO')) this.pixelPass.quantize = !this.pixelPass.quantize;
     if (i.consume('KeyL')) this.pixelPass.outlines = !this.pixelPass.outlines;
     if (i.consume('F3')) this.debug.visible = !this.debug.visible;
+    if (i.consume('F4')) this.soundDebug.visible = !this.soundDebug.visible;
+    if (i.consume('KeyM')) this.audio.play(this.audio.toggleMute() ? 'ui.mute' : 'ui.unmute');
   }
 
   /** Update and return the low-res pointer for menus (consumes mouse press / release edges). */

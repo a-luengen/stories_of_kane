@@ -42,6 +42,8 @@ export interface HudState {
   mounted: boolean;
   speedLabel: string | null;
   pixelate: boolean;
+  /** Sound muted (M): a crossed-out speaker by the health bar. */
+  muted?: boolean;
 }
 
 /**
@@ -119,6 +121,8 @@ export class Hud {
       ctx.fillRect(42, 16, Math.round(20 * s.healProgress), 1);
     }
 
+    if (s.muted) this.mutedIcon(3 + hw + 17 + 3, 3);
+
     // Weapon bar + ammo bottom-left.
     const barY = H - SLOT_H - 4;
     drawWeaponBar(ctx, 4, barY, s.weaponBar, this.time);
@@ -145,6 +149,21 @@ export class Hud {
     if (!s.pixelate) drawText(ctx, 'PIXEL OFF [P]', W - textWidth('PIXEL OFF [P]') - 4, H - 10, C.cream, C.ink);
 
     if (s.cursorX !== null && s.cursorY !== null && !s.menuOpen) this.crosshair(s.cursorX, s.cursorY, s.weaponBar.reloadProgress >= 0);
+  }
+
+  /** 9×9 speaker with a red cross. */
+  private mutedIcon(x: number, y: number): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = 'rgba(31,21,16,0.55)';
+    ctx.fillRect(x, y, 15, 9);
+    ctx.fillStyle = C.cream;
+    ctx.fillRect(x + 2, y + 3, 2, 3); // magnet
+    for (let i = 0; i < 3; i++) ctx.fillRect(x + 4 + i, y + 3 - i, 1, 3 + 2 * i); // cone
+    ctx.fillStyle = C.red;
+    for (let i = 0; i < 5; i++) {
+      ctx.fillRect(x + 8 + i, y + 2 + i, 1, 1);
+      ctx.fillRect(x + 12 - i, y + 2 + i, 1, 1);
+    }
   }
 
   private label(l: WorldLabel, W: number, H: number): void {

@@ -1,3 +1,4 @@
+import { uiSound } from '../audio/uiSound';
 import type { Input } from '../Input';
 import { drawText, textWidth } from './PixelFont';
 import { UI } from './theme';
@@ -53,12 +54,19 @@ export class MenuList {
   update(x: number, y: number, ptr: UiPointer, keys: MenuKeys): void {
     this.rects = this.items.map((_, i) => ({ x, y: y + i * (this.h + this.gap), w: this.w, h: this.h }));
     const n = this.items.length;
+    const before = this.focus;
     if (keys.up) this.focus = (this.focus + n - 1) % n;
     if (keys.down) this.focus = (this.focus + 1) % n;
     const hover = this.rects.findIndex((r) => inRect(r, ptr.x, ptr.y));
     if (hover >= 0 && (ptr.moved || ptr.pressed)) this.focus = hover;
-    if (keys.confirm) this.items[this.focus].action();
-    else if (ptr.released && hover >= 0 && hover === this.focus) this.items[hover].action();
+    if (this.focus !== before) uiSound('ui.hover');
+    if (keys.confirm) {
+      uiSound('ui.click');
+      this.items[this.focus].action();
+    } else if (ptr.released && hover >= 0 && hover === this.focus) {
+      uiSound('ui.click');
+      this.items[hover].action();
+    }
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
@@ -111,12 +119,22 @@ export class Dialog {
     const bw = 60;
     const bx = Math.round(r.x + (r.w - (n * bw + (n - 1) * 6)) / 2);
     this.buttons = this.items.map((_, i) => ({ x: bx + i * (bw + 6), y: r.y + r.h - 18, w: bw, h: 13 }));
-    if (keys.back) return this.items[n - 1].action();
+    if (keys.back) {
+      uiSound('ui.click');
+      return this.items[n - 1].action();
+    }
+    const before = this.focus;
     if (keys.up || keys.down) this.focus = (this.focus + 1) % n;
     const hover = this.buttons.findIndex((b) => inRect(b, ptr.x, ptr.y));
     if (hover >= 0 && (ptr.moved || ptr.pressed)) this.focus = hover;
-    if (keys.confirm) this.items[this.focus].action();
-    else if (ptr.released && hover >= 0) this.items[hover].action();
+    if (this.focus !== before) uiSound('ui.hover');
+    if (keys.confirm) {
+      uiSound('ui.click');
+      this.items[this.focus].action();
+    } else if (ptr.released && hover >= 0) {
+      uiSound('ui.click');
+      this.items[hover].action();
+    }
   }
 
   draw(ctx: CanvasRenderingContext2D, W: number, H: number): void {

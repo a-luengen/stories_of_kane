@@ -158,5 +158,6 @@ export function buildOutpostMap(_targets: TargetSystem): WorldData {
     horseSpawn: null,
     horseYaw: 0,
     containers: containers.items,
+    floors: [],
   };
 }

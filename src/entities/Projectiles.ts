@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config';
 import type { WeaponDef } from '../data/types';
+import { closestApproach } from '../audio/spatial';
 import { PAL } from '../render/palette';
 import type { Collider, CollisionWorld, Surface } from '../world/Colliders';
 import type { TargetSystem, Target } from './Targets';
@@ -20,12 +21,23 @@ export interface Impact {
   collider: Collider | null;
 }
 
+/** Someone listening for bullets going past (the player's head). */
+export interface NearListener {
+  pos: THREE.Vector3;
+  radius: number;
+  /** A bullet not fired by `ignore` passed within `radius` (closest point, direction of travel). */
+  onPass(point: THREE.Vector3, dir: THREE.Vector3): void;
+  ignore: Target | null;
+}
+
 interface Bullet {
   pos: THREE.Vector3;
   prev: THREE.Vector3;
   vel: THREE.Vector3;
   travelled: number;
   alive: boolean;
+  /** Already whizzed past the listener. */
+  passed: boolean;
   mesh: THREE.Mesh;
   weapon: WeaponDef;
   shooter: Target | null;
@@ -50,7 +62,7 @@ export class ProjectileSystem {
       const mesh = new THREE.Mesh(this.geo, this.mat);
       mesh.frustumCulled = false;
       this.group.add(mesh);
-      b = { pos: new THREE.Vector3(), prev: new THREE.Vector3(), vel: new THREE.Vector3(), travelled: 0, alive: false, mesh, weapon, shooter };
+      b = { pos: new THREE.Vector3(), prev: new THREE.Vector3(), vel: new THREE.Vector3(), travelled: 0, alive: false, passed: false, mesh, weapon, shooter };
       this.bullets.push(b);
     }
     b.pos.copy(origin);
@@ -58,12 +70,13 @@ export class ProjectileSystem {
     b.vel.copy(dir).multiplyScalar(weapon.bulletSpeed);
     b.travelled = 0;
     b.alive = true;
+    b.passed = false;
     b.weapon = weapon;
     b.shooter = shooter;
     b.mesh.visible = true;
   }
 
-  update(dt: number, world: CollisionWorld, targets: TargetSystem, onImpact: (i: Impact) => void): void {
+  update(dt: number, world: CollisionWorld, targets: TargetSystem, onImpact: (i: Impact) => void, near?: NearListener): void {
     for (const b of this.bullets) {
       if (!b.alive) continue;
       b.prev.copy(b.pos);
@@ -85,6 +98,13 @@ export class ProjectileSystem {
       } else if (wh) {
         hit(wh.t, new THREE.Vector3(wh.nx, wh.ny, wh.nz), wh.surface, null, wh.collider);
       } else {
+        if (near && !b.passed && b.shooter !== near.ignore) {
+          const c = closestApproach(a.x, a.y, a.z, e.x, e.y, e.z, near.pos.x, near.pos.y, near.pos.z);
+          if (c.dist < near.radius) {
+            b.passed = true;
+            near.onPass(a.clone().lerp(e, c.t), dir.clone());
+          }
+        }
         b.pos.copy(e);
         b.travelled += step;
         if (b.travelled > b.weapon.range) b.alive = false;

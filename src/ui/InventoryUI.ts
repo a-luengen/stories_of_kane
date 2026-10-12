@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import { uiSound } from '../audio/uiSound';
 import type { Equipment } from '../items/Equipment';
 import type { GridContainer } from '../items/GridContainer';
 import type { IconRenderer } from '../items/IconRenderer';
@@ -196,9 +197,10 @@ export class InventoryUI {
     // Off-hand first (taking the main gun would move the off-hand gun up into its place).
     const slots = t.equipment ? [{ holder: t.equipment, key: 'o0' as const }, { holder: t.equipment, key: 'w0' as const }] : [];
     const r = takeAll(t.inventory, p.inventory, slots);
+    if (r.moved > 0) uiSound('inv.drop');
     if (r.leftover) {
       this.host.toast('Inventory full');
-      this.flash = { grid: p.inventory, left: 0.4 };
+      this.deny(p.inventory);
     }
     this.changed();
   }
@@ -216,9 +218,13 @@ export class InventoryUI {
     const r = unloadWeapon(item, into);
     if (r.unloaded === 0 && r.left === 0) this.host.toast('Not loaded');
     else if (r.left > 0) {
-      this.flash = { grid: into, left: 0.4 };
+      this.deny(into);
       this.host.toast(r.unloaded > 0 ? `No space for ${r.left} rounds` : 'No space');
-    } else this.host.toast(`Unloaded ${r.unloaded} rounds`);
+    } else {
+      this.host.toast(`Unloaded ${r.unloaded} rounds`);
+      uiSound('inv.unload');
+    }
+    if (r.unloaded > 0 && r.left > 0) uiSound('inv.unload');
     this.changed();
   }
 
@@ -267,11 +273,18 @@ export class InventoryUI {
     } else {
       return;
     }
+    if (r.ok) uiSound(this.mode.kind === 'inventory' && h.kind === 'grid' ? equipSound(item) : 'inv.drop');
     if (!r.ok || r.partial) {
-      this.flash = { grid: into, left: 0.4 };
+      this.deny(into);
       this.host.toast(r.ok ? 'No space for all of it' : 'No space');
     }
     this.changed();
+  }
+
+  /** Something didn't fit: the grid blinks red and buzzes. */
+  private deny(grid: GridContainer): void {
+    this.flash = { grid, left: 0.4 };
+    uiSound('inv.noSpace');
   }
 
   /** Buy a dragged / clicked stock item into a grid cell, a slot, or anywhere that fits. */
@@ -289,6 +302,7 @@ export class InventoryUI {
     }
     const r = economy.buy(entry, inv, this.mode.shop.wave(), place);
     const name = itemDef(entry.item).name;
+    uiSound(r.ok ? 'shop.buy' : 'inv.noSpace');
     if (r.ok) this.host.toast(`Bought ${name}  -$${entry.price}`);
     else if (r.reason === 'funds') this.host.toast('Not enough money');
     else if (r.reason === 'locked') this.host.toast(`Available from wave ${entry.unlockWave}`);
@@ -326,6 +340,7 @@ export class InventoryUI {
 
     // R: rotate what's held; with nothing held, "Take all" in the loot view.
     if (keys.rotate) {
+      if (this.buying || this.drag) uiSound('inv.rotate');
       if (this.buying) this.buying.item.rotated = !this.buying.item.rotated;
       else if (this.drag) {
         this.drag.item.rotated = !this.drag.item.rotated;
@@ -348,6 +363,7 @@ export class InventoryUI {
       if (item && itemDef(item.defId).heal && this.host.useItem && z?.kind === 'grid') {
         const why = this.host.useItem(item);
         if (why) this.host.toast(why);
+        uiSound(why ? 'inv.noSpace' : 'inv.cloth');
       } else if (item && weaponOf(itemDef(item.defId)) && z) this.unload(item, z);
     }
 
@@ -360,6 +376,7 @@ export class InventoryUI {
         if (p) {
           this.grab = { dx: x - (z.x + p.x * z.cell), dy: y - (z.y + p.y * z.cell) };
           this.drag = keys.shift ? beginSplit(z.grid, cx, cy) : beginDrag({ kind: 'grid', grid: z.grid, x: cx, y: cy });
+          if (this.drag) uiSound('inv.lift');
         }
       } else if (z?.kind === 'slot') {
         const item = z.holder.get(z.key);
@@ -367,6 +384,7 @@ export class InventoryUI {
           const f = footprint(item);
           this.grab = { dx: (f.w * 16) / 2, dy: (f.h * 16) / 2 };
           this.drag = beginDrag({ kind: 'slot', holder: z.holder, key: z.key });
+          uiSound('inv.lift');
           this.changed();
         }
       } else if (z?.kind === 'stock' && this.mode.kind === 'shop') {
@@ -376,6 +394,7 @@ export class InventoryUI {
           const f = footprint(item);
           this.grab = { dx: (f.w * 16) / 2, dy: (f.h * 16) / 2 };
           this.buying = { entry: z.entry, item, from: z };
+          uiSound('inv.lift');
         }
       } else if (z?.kind === 'button') {
         z.action();
@@ -408,6 +427,7 @@ export class InventoryUI {
         const shop = this.mode.shop;
         if (shop.buys && !shop.buys(d.item)) {
           cancelDrag(d);
+          uiSound('inv.noSpace');
           this.host.toast(`${shop.merchantName} doesn't buy that`);
           this.changed();
           return;
@@ -415,6 +435,7 @@ export class InventoryUI {
         const v = this.mode.shop.economy.sell(d.item);
         if (d.splitFrom && d.splitFrom.quantity <= 0) this.host.player.inventory.remove(d.splitFrom);
         this.host.toast(`Sold ${itemDef(d.item.defId).name}  +$${v}`);
+        uiSound('shop.sell');
         this.changed();
       }
       if (this.drag) {
@@ -424,8 +445,13 @@ export class InventoryUI {
         if (target) {
           const r = dropDrag(d, target, overflow);
           if (r.dropped) this.host.dropToWorld(r.dropped);
+          // Where it landed: a worn piece rustles, a gun clicks into its slot, the rest is set down.
+          if (!r.ok) uiSound('inv.noSpace');
+          else if (target.kind === 'slot') uiSound(equipSound(d.item));
+          else uiSound('inv.drop');
         } else {
           cancelDrag(d);
+          uiSound('inv.drop');
         }
         this.changed();
       }
@@ -562,4 +588,10 @@ export class InventoryUI {
     if (c) lines.push({ text: `SLOT ${SLOT_NAMES[c.slot]}`, color: UI.sand });
     return lines;
   }
+}
+
+/** Equipping: guns click, clothes rustle. */
+function equipSound(item: ItemInstance): string {
+  const cat = itemDef(item.defId).category;
+  return cat === 'weapon' ? 'inv.gun' : cat === 'clothing' ? 'inv.cloth' : 'inv.drop';
 }

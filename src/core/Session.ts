@@ -21,6 +21,7 @@ import { segmentVsBox, type CircleCollider, type CollisionWorld, type Surface } 
 import type { Occluder, WorldData } from '../world/props';
 import { WorldItemSystem, type WorldItem } from '../world/WorldItem';
 import { CoverDebug } from '../render/CoverDebug';
+import { SessionAudio } from '../audio/SessionAudio';
 import { disposeObject } from './dispose';
 import type { Engine } from './Engine';
 
@@ -81,6 +82,8 @@ export class Session {
   readonly worldItems: WorldItemSystem;
   /** B: cover volumes, hitboxes and bullet heights. */
   readonly coverDebug: CoverDebug;
+  /** Positioned sound for this session (the player is the listener). */
+  readonly sound: SessionAudio;
   readonly map: WorldData;
   /** Simulation speed (slow motion < 1). */
   timeScale = 1;
@@ -100,7 +103,6 @@ export class Session {
   private accumulator = 0;
   private aim = new THREE.Vector3();
   private focusTarget = new THREE.Vector3();
-  private footstepTimer = 0;
   private cursor: { x: number; y: number } | null = null;
   private occluders: Occluder[];
 
@@ -147,13 +149,25 @@ export class Session {
     this.scene.add(this.npcs.group);
     for (const n of this.npcs.npcs) this.registerNpc(n);
     for (const c of wd.containers) {
-      c.onOpen = (box) => this.openUi(() => this.ui.openLoot(box));
+      c.onOpen = (box) => {
+        this.sound.lidOpen(box.kind, box.position);
+        this.openUi(() => this.ui.openLoot(box));
+      };
       c.onCollisionChanged = (box) => {
         const b = box.bounds;
         this.nav.refresh(this.world, b.minX, b.minZ, b.maxX, b.maxZ);
       };
     }
 
+    this.sound = new SessionAudio(engine.audio, engine.rig.right);
+    this.sound.setListener(this.player.pos);
+    // Footsteps come from the walk cycle: a sound on the surface underfoot, dust on dirt.
+    this.player.model.onStep = () => {
+      const p = this.player;
+      const gait = p.crouch > 0.5 ? 'crouch' : p.sprinting ? 'run' : 'walk';
+      const surface = this.sound.step(p.pos, gait, this.map.floors);
+      if (surface === 'dirt') this.particles.burst('hoof', p.pos.clone().setY(0.05), undefined, gait === 'run' ? 0.8 : gait === 'walk' ? 0.5 : 0.3);
+    };
     this.coverDebug = new CoverDebug(this.world);
     this.scene.add(this.coverDebug.group);
     px.unoutlined.push(this.coverDebug.group);
@@ -178,6 +192,11 @@ export class Session {
   registerNpc(n: Npc): void {
     this.targets.addActor(n);
     n.onLoot = (npc) => this.openUi(() => this.ui.openLoot(npc));
+    n.onSpeak = (npc, text, mood) => this.sound.speak(npc, text, mood);
+    n.model.onStep = () => {
+      const gait = n.crouch > 0.5 ? 'crouch' : n.vel.length() > 3.2 ? 'run' : 'walk';
+      this.sound.step(n.pos, gait, this.map.floors, true);
+    };
   }
 
   /** Add a horse (mountable by the player whenever no one rides it). */
@@ -191,6 +210,7 @@ export class Session {
       const back = new THREE.Vector3(-Math.sin(m.rotation.y) * 0.7, 0.05, -Math.cos(m.rotation.y) * 0.7);
       this.particles.burst('hoof', back.add(m.position));
     };
+    h.model.onHoof = (leg, speed01) => this.sound.hoof(h.pos, speed01, leg < 2);
     h.canMount = () => !this.player.mounted && !this.player.dead && !h.ridden && !h.riderNpc;
     h.onMount = () => this.mount(h);
     return h;
@@ -274,6 +294,7 @@ export class Session {
   private pickUp(w: WorldItem): void {
     const before = w.item.quantity;
     const left = pickup(this.player.inventory, w.item);
+    if (left < before) this.sound.pickup(w.position);
     if (left === 0) {
       this.worldItems.remove(w);
     } else {
@@ -361,11 +382,15 @@ export class Session {
       p.mountYaw = this.riding.heading;
     } else {
       p.updateMovement(dt, pin, this.world, [...this.otherHorseColliders(null), ...npcBodies]);
-      this.spawnFootsteps(dt);
     }
     this.playerCollider.x = p.pos.x;
     this.playerCollider.z = p.pos.z;
 
+    // Pulling the trigger on an empty gun clicks.
+    const pull = pin.fireHeld && !this.triggerWasHeld;
+    this.triggerWasHeld = pin.fireHeld;
+    const gun = p.weapon;
+    if (pull && gun && p.draw >= 1 && gun.ammo === 0 && !gun.reloading && p.healLeft <= 0) this.sound.dryFire(p.pos);
     const shot = p.updateWeapon(dt, pin);
     if (shot) {
       this.fireShot(shot, p, this.flash);
@@ -376,7 +401,14 @@ export class Session {
     if (!p.mounted && !p.dead) others.push(this.playerCollider);
     this.npcs.update(dt, p, others, (npc, s) => this.fireShot(s, npc, this.npcFlash));
 
-    this.projectiles.update(dt, this.world, this.targets, (imp) => this.onImpact(imp));
+    this.projectiles.update(dt, this.world, this.targets, (imp) => this.onImpact(imp), {
+      pos: this.sound.ear(p),
+      radius: CONFIG.audio.whizzRadius,
+      ignore: p,
+      onPass: (point) => this.sound.whizz(point),
+    });
+    this.sound.watchGuns([p, ...this.npcs.npcs]);
+    this.sound.watchHorses(dt, this.horses);
     this.updateDeath();
     this.targets.update(dt);
     this.particles.update(dt);
@@ -438,7 +470,10 @@ export class Session {
     return this.occluders.some((o) => o.fade.value > 0.3 && x > o.minX - e && x < o.maxX + e && z > o.minZ - e && z < o.maxZ + e);
   }
 
+  private triggerWasHeld = false;
+
   private fireShot(shot: ShotRequest, shooter: Player | Npc, flash: MuzzleFlash): void {
+    this.sound.shot(shot);
     for (const dir of shot.dirs) this.projectiles.fire(shot.origin, dir, shot.weapon, shooter);
     const d = shot.dirs[0];
     flash.trigger(shot.origin, d);
@@ -464,6 +499,7 @@ export class Session {
   }
 
   mount(h: Horse): void {
+    this.sound.horseMount(h.pos);
     const p = this.player;
     p.cancelCrouch();
     p.mounted = true;
@@ -507,16 +543,6 @@ export class Session {
     this.particles.burst('dust', p.pos.clone().setY(0.1));
   }
 
-  private spawnFootsteps(dt: number): void {
-    const sp = this.player.speed();
-    if (sp < 1) return;
-    this.footstepTimer -= dt;
-    if (this.footstepTimer <= 0) {
-      this.footstepTimer = this.player.sprinting ? 0.2 : 0.32;
-      this.particles.burst('hoof', this.player.pos.clone().setY(0.05), undefined, this.player.sprinting ? 0.8 : 0.5);
-    }
-  }
-
   private onImpact(imp: Impact): void {
     const byPlayer = imp.shooter === this.player;
     const hitNpc = imp.target instanceof Npc ? imp.target : null;
@@ -527,12 +553,16 @@ export class Session {
     }
     if (imp.target) {
       const kind = imp.target.hit(imp.point, imp.dir, { damage: imp.damage, shooter: imp.shooter });
+      this.sound.impact(imp, kind);
+      if (imp.target === this.player) this.sound.playerHurt();
+      else if (hitNpc && wasAlive) this.sound.npcHit(hitNpc, !hitNpc.alive);
       this.particles.burst(kind, imp.point, imp.dir.clone().multiplyScalar(0.6).add(imp.normal));
       if (kind !== 'blood') this.particles.burst('spark', imp.point, imp.normal, 0.5);
       if (imp.target === this.player) this.engine.rig.addTrauma(0.35);
       if (hitNpc && wasAlive && !hitNpc.alive) this.hooks.onNpcDeath?.(hitNpc, byPlayer);
       return;
     }
+    this.sound.impact(imp, null);
     const kinds = imp.surface === 'target' ? ['dust' as BurstKind] : IMPACT_BURSTS[imp.surface];
     kinds.forEach((k, i) => this.particles.burst(k, imp.point, imp.normal, i === 0 ? 1 : 0.6));
     if (imp.surface === 'dirt') this.particles.burst('dust', imp.point, imp.normal, 0.6);
@@ -546,6 +576,7 @@ export class Session {
     const spilled = box.damage(imp.damage);
     if (!spilled) return;
     const at = box.position;
+    this.sound.crateBreak(at);
     for (let i = 0; i < 4; i++) {
       const p = at.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.25 + Math.random() * 0.4, (Math.random() - 0.5) * 0.6));
       this.particles.burst('wood', p, new THREE.Vector3(0, 1, 0), 1.3);
@@ -583,6 +614,8 @@ export class Session {
 
     // Camera: follow the (interpolated) player, lead a little towards the aim and travel direction.
     const base = this.riding ? this.riding.model.root.position : p.model.root.position;
+    // The listener follows the player (as the camera does).
+    this.sound.setListener(base);
     const c = CONFIG.camera;
     const lead = this.focusTarget.set(this.aim.x - base.x, 0, this.aim.z - base.z).multiplyScalar(c.aimLead);
     if (lead.length() > c.maxAimLead) lead.setLength(c.maxAimLead);
@@ -638,6 +671,7 @@ export class Session {
       mounted: p.mounted,
       speedLabel: this.riding ? this.gaitLabel(this.riding) : null,
       pixelate: engine.pixelate,
+      muted: engine.audio.muted,
     });
     const ctx = engine.hud.context;
     this.hooks.drawHud?.(ctx, engine.lowW, engine.lowH, paused ? 0 : frameDt);
@@ -743,6 +777,7 @@ export class Session {
 
   /** Free everything this session created (geometries, materials, shadow map, preview target). */
   dispose(): void {
+    this.sound.dispose();
     if (this.ui.open) this.ui.close();
     this.ui.dispose();
     this.sun.shadow.map?.dispose();

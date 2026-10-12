@@ -158,6 +158,7 @@ export function buildSandboxMap(targets: TargetSystem): WorldData {
     horseSpawn: new THREE.Vector3(-6.5, 0, 2.6),
     horseYaw: Math.PI / 2,
     containers: containers.items,
+    floors: occluders.flatMap((o) => (o.floor ? [o.floor] : [])),
   };
 }
 

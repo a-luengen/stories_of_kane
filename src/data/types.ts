@@ -40,6 +40,8 @@ export interface WeaponDef {
   ammoType: string;
   /** Seconds to draw (or put away). */
   drawTime: number;
+  /** Can be paired with a second dual-wieldable gun in the same weapon slot (off-hand). */
+  dualWieldable?: boolean;
   /** How NPCs fight with it. */
   ai: {
     /** Distance band the NPC tries to keep to its target. */
@@ -160,6 +162,8 @@ export interface NpcDef {
   appearance: AppearanceConfig;
   /** A weapon id from WEAPONS, an inline weapon definition, or null for unarmed. A holster weapon is carried in hand without a holster. */
   weapon: string | WeaponDef | null;
+  /** A second gun for the left hand (both must be dual-wieldable). */
+  offHandWeapon?: string | WeaponDef | null;
   /** Grid contents. If omitted: 1-2 boxes of ammo for the weapon. */
   inventory?: ItemGrant[];
   spawn: Vec2;

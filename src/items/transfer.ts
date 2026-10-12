@@ -1,7 +1,7 @@
-import type { SlotHolder, SlotKey } from './Equipment';
+import { isDualWieldable, offHandKey, weaponKey, type Equipment, type SlotHolder, type SlotKey } from './Equipment';
 import { mergeStacks, splitStack, type GridContainer } from './GridContainer';
-import { itemDef } from './ItemDef';
-import { footprint, type ItemInstance } from './ItemInstance';
+import { ammoItemFor, clothingOf, itemDef, weaponOf } from './ItemDef';
+import { createItem, footprint, type ItemInstance } from './ItemInstance';
 
 /** A place an item can be: a grid cell (top-left) or a named slot. */
 export type Loc =
@@ -163,4 +163,116 @@ export function takeAll(from: GridContainer, to: GridContainer, slots: { holder:
   }
   const leftover = !from.isEmpty || slots.some((s) => s.holder.get(s.key));
   return { moved, leftover };
+}
+
+// ------------------------------------------------------------------------------ quick moves
+
+/** Where an item sits, for the double-click shortcuts. */
+export type Holding = { kind: 'grid'; grid: GridContainer } | { kind: 'slot'; holder: SlotHolder; key: SlotKey };
+
+export type QuickResult = { ok: true; partial?: boolean } | { ok: false; reason: 'noSpace' | 'noSlot' };
+
+/** Take an item out of where it is; returns a function that puts it back exactly. */
+function lift(item: ItemInstance, from: Holding): (() => void) | null {
+  if (from.kind === 'grid') {
+    const p = from.grid.find(item);
+    if (!p) return null;
+    const { x, y } = p;
+    const rot = item.rotated;
+    from.grid.remove(item);
+    return () => void from.grid.place(item, x, y, rot);
+  }
+  if (from.holder.get(from.key) !== item) return null;
+  from.holder.take(from.key);
+  return () => void from.holder.put(from.key, item, null);
+}
+
+/**
+ * Double-click across the loot view: move an item into `to` — topping up matching stacks
+ * first, then the first free spot (either orientation). A stack that only partly fits leaves
+ * the rest where it was; nothing fitting changes nothing.
+ */
+export function quickMove(item: ItemInstance, from: Holding, to: GridContainer): QuickResult {
+  if (from.kind === 'grid' && from.grid === to) return { ok: false, reason: 'noSpace' };
+  const before = item.quantity;
+  const putBack = lift(item, from);
+  if (!putBack) return { ok: false, reason: 'noSpace' };
+  const left = to.add(item);
+  if (left === 0) return { ok: true };
+  putBack();
+  return left < before ? { ok: true, partial: true } : { ok: false, reason: 'noSpace' };
+}
+
+/**
+ * Double-click in the inventory: a gun goes to the first free weapon slot, clothing to its slot
+ * (whatever it replaces — and what a dress pushes out — goes back to the grid). All or nothing.
+ */
+export function quickEquip(item: ItemInstance, grid: GridContainer, eq: Equipment, active: number | null = null): QuickResult {
+  const def = itemDef(item.defId);
+  const p = grid.find(item);
+  if (!p) return { ok: false, reason: 'noSlot' };
+  let key: SlotKey | null = null;
+  if (def.category === 'weapon') {
+    const i = eq.weapons.findIndex((w) => w === null);
+    if (active !== null && isDualWieldable(item) && isDualWieldable(eq.weapons[active]) && !eq.offHands[active]) {
+      // A handgun next to the single handgun in the selected slot: dual wield.
+      key = offHandKey(active);
+    } else if (i < 0) return { ok: false, reason: 'noSlot' };
+    else key = weaponKey(i);
+  } else {
+    const c = clothingOf(def);
+    if (!c) return { ok: false, reason: 'noSlot' };
+    key = c.slot === 'fullBody' ? 'legs' : c.slot;
+  }
+  const restoreGrid = grid.snapshot();
+  const restoreEq = eq.snapshot();
+  const fail = (): QuickResult => {
+    restoreGrid();
+    restoreEq();
+    return { ok: false, reason: 'noSpace' };
+  };
+  grid.remove(item);
+  const old = eq.take(key);
+  if (!eq.put(key, item, grid)) return fail();
+  if (old && grid.add(old) > 0) return fail();
+  return { ok: true };
+}
+
+/** Double-click on something worn or slotted: back into the grid (if there's room). */
+export function quickUnequip(holder: SlotHolder, key: SlotKey, grid: GridContainer): QuickResult {
+  const item = holder.get(key);
+  if (!item) return { ok: false, reason: 'noSlot' };
+  holder.take(key);
+  if (grid.add(item) === 0) return { ok: true };
+  holder.put(key, item, null);
+  return { ok: false, reason: 'noSpace' };
+}
+
+// ------------------------------------------------------------------------------ unloading
+
+/**
+ * Right-click on a gun: take its loaded rounds out into `into` — topping up matching ammo stacks
+ * first, then new stacks in free cells. Whatever doesn't fit stays in the gun.
+ */
+export function unloadWeapon(item: ItemInstance, into: GridContainer): { unloaded: number; left: number } {
+  const w = weaponOf(itemDef(item.defId));
+  const loaded = item.loadedRounds ?? 0;
+  const ammo = w ? ammoItemFor(w.ammoType) : null;
+  if (!w || loaded <= 0 || !ammo) return { unloaded: 0, left: loaded };
+  let left = loaded;
+  for (const p of into.placements) {
+    if (left <= 0) break;
+    if (p.item.defId !== ammo.id) continue;
+    const k = Math.min(left, ammo.maxStack - p.item.quantity);
+    if (k <= 0) continue;
+    p.item.quantity += k;
+    left -= k;
+  }
+  while (left > 0) {
+    const stack = createItem(ammo.id, Math.min(left, ammo.maxStack));
+    if (!into.placeAnywhere(stack)) break;
+    left -= stack.quantity;
+  }
+  item.loadedRounds = left;
+  return { unloaded: loaded - left, left };
 }

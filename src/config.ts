@@ -118,6 +118,21 @@ export const CONFIG = {
     weaponSwapTime: 0.4,
   },
 
+  /** Two guns in one weapon slot (both `dualWieldable`). */
+  weapons: {
+    /** Dual wielding fires every (slower gun's interval × this), alternating hands. */
+    dualFireIntervalMultiplier: 0.6,
+    /** Reloading both takes (longer reload time × this). */
+    dualReloadMultiplier: 1.5,
+  },
+
+  containers: {
+    /** Crates and ammo boxes break after this much damage (4 revolver hits). */
+    hp: 100,
+    /** Share of a never-opened box's loot that survives and scatters when it breaks. */
+    scatterShare: 0.5,
+  },
+
   sandbox: {
     /** Dollars in your pocket at the start (earn more by selling to the merchants). */
     startingDollars: 150,
@@ -127,6 +142,8 @@ export const CONFIG = {
     /** The player's horse arrives at the start of the break after this wave. */
     horseUnlockWave: 3,
     mountedEnemiesFromWave: 5,
+    /** From this wave on, a share of the gunslingers (WaveSpec.dual) carry two guns. */
+    dualWieldFromWave: 6,
     countdown: 5,
     intermission: 25,
     /** "Wave cleared" banner time at the start of the break. */

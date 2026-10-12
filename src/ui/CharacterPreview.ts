@@ -48,11 +48,11 @@ export class CharacterPreview {
   }
 
   /** Rebuild when the equipment changed (`version` is the equipment version). */
-  sync(appearance: AppearanceConfig, weapons: readonly (WeaponDef | null)[], version: number): void {
+  sync(appearance: AppearanceConfig, weapons: readonly (WeaponDef | null)[], version: number, offHands: readonly (WeaponDef | null)[] = []): void {
     if (version === this.version) return;
     this.version = version;
     this.rig.applyAppearance(appearance);
-    this.rig.setWeapons(weapons);
+    this.rig.setWeapons(weapons, offHands);
     this.rig.placeWeapons(null, false);
   }
 

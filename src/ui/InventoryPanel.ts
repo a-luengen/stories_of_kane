@@ -1,5 +1,5 @@
 import type { EquipSlot } from '../data/types';
-import { weaponKey, WEAPON_SLOTS, type Equipment } from '../items/Equipment';
+import { isDualWieldable, offHandKey, weaponKey, WEAPON_SLOTS, type Equipment } from '../items/Equipment';
 import type { GridContainer } from '../items/GridContainer';
 import { CELL, type Layout, type Rect, type Zone } from './widgets';
 
@@ -22,10 +22,25 @@ const RIGHT: [EquipSlot, string][] = [
 
 export const PREVIEW_SIZE = { w: PREVIEW_W, h: PREVIEW_H };
 
+/** Width of the off-hand sub-slot at the right end of a weapon slot. */
+const OFF_W = 15;
+
+/**
+ * One weapon slot. Holding a dual-wieldable gun, it splits off an off-hand sub-slot ("L") on the
+ * right for a second one.
+ */
+export function weaponSlotZone(eq: Equipment, i: number, label: string, x: number, y: number, w: number): Zone[] {
+  if (!isDualWieldable(eq.weapons[i])) return [{ kind: 'slot', holder: eq, key: weaponKey(i), label, x, y, w, h: 20 }];
+  return [
+    { kind: 'slot', holder: eq, key: weaponKey(i), label, x, y, w: w - OFF_W - 1, h: 20 },
+    { kind: 'slot', holder: eq, key: offHandKey(i), label: 'L', x: x + w - OFF_W, y, w: OFF_W, h: 20 },
+  ];
+}
+
 /** Weapon slots 1-3 in a row. */
 export function weaponSlotZones(eq: Equipment, x: number, y: number, w: number): Zone[] {
   const sw = Math.floor((w - (WEAPON_SLOTS - 1) * 2) / WEAPON_SLOTS);
-  return Array.from({ length: WEAPON_SLOTS }, (_, i) => ({ kind: 'slot' as const, holder: eq, key: weaponKey(i), label: String(i + 1), x: x + i * (sw + 2), y, w: sw, h: 20 }));
+  return Array.from({ length: WEAPON_SLOTS }, (_, i) => weaponSlotZone(eq, i, String(i + 1), x + i * (sw + 2), y, sw)).flat();
 }
 
 export function gridZone(grid: GridContainer, x: number, y: number): Zone {

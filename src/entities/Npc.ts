@@ -17,7 +17,7 @@ import type { Horse } from './Horse';
 import { NpcModel } from './NpcModel';
 import type { BurstKind } from './Particles';
 import type { Hitbox, HitInfo, Target } from './Targets';
-import { WeaponState, type ShotRequest } from './Weapon';
+import { GunSet, WeaponState, type Hand, type ShotRequest } from './Weapon';
 import { muzzleOffset } from './WeaponModel';
 
 export type NpcMode = 'routine' | 'hostile' | 'flee' | 'hide' | 'dead';
@@ -104,6 +104,7 @@ export class Npc implements Target, Interactable {
   private telegraphLeft = 0;
   private shotDelay = 0;
   private recoil = 0;
+  private recoilL = 0;
   private wasReloading = false;
   private strafeLeft = 0;
   private aimPoint = new THREE.Vector3();
@@ -150,25 +151,45 @@ export class Npc implements Target, Interactable {
     return item ? weaponOf(itemDef(item.defId)) : null;
   }
 
-  /** The equipped weapon's state; reloads come out of this NPC's own inventory. */
-  get weapon(): WeaponState | null {
-    const item = this.equipment.weapons[0];
-    const def = this.weaponDef;
-    if (!item || !def) return null;
+  /** The off-hand gun's definition (dual wielding), if any. */
+  get offHandDef(): WeaponDef | null {
+    const item = this.equipment.offHands[0];
+    return item ? weaponOf(itemDef(item.defId)) : null;
+  }
+
+  private stateOf(item: ItemInstance): WeaponState {
     let s = this.states.get(item);
     if (!s) {
-      s = new WeaponState(def, item, this.inventory);
+      s = new WeaponState(weaponOf(itemDef(item.defId))!, item, this.inventory);
       this.states.set(item, s);
     }
     return s;
   }
 
+  private sets = new WeakMap<ItemInstance, GunSet>();
+
+  /** The equipped gun(s); reloads come out of this NPC's own inventory. */
+  get weapon(): GunSet | null {
+    const item = this.equipment.weapons[0];
+    if (!item || !this.weaponDef) return null;
+    let set = this.sets.get(item);
+    if (!set) {
+      set = new GunSet(this.stateOf(item));
+      this.sets.set(item, set);
+    }
+    const off = this.equipment.offHands[0];
+    set.setLeft(off ? this.stateOf(off) : null);
+    return set;
+  }
+
   /** Fresh kit from the data: weapon, worn clothing, pockets (given or 1-2 boxes of matching ammo). */
   private resetLoadout(): void {
     for (const p of [...this.inventory.placements]) this.inventory.remove(p.item);
-    for (const k of ['w0', ...EQUIP_SLOTS] as SlotKey[]) this.equipment.take(k);
+    for (const k of ['o0', 'w0', ...EQUIP_SLOTS] as SlotKey[]) this.equipment.take(k);
     const w = resolveWeapon(this.def.weapon);
     if (w) this.equipment.put('w0', createItem(itemForWeapon(w).id), null);
+    const off = resolveWeapon(this.def.offHandWeapon ?? null);
+    if (w && off) this.equipment.put('o0', createItem(itemForWeapon(off).id), null);
     for (const s of EQUIP_SLOTS) {
       const id = this.def.appearance.clothing[s];
       if (id) this.equipment.put(s, createItem(id), null);
@@ -184,12 +205,12 @@ export class Npc implements Target, Interactable {
 
   /** After items were taken from the corpse: update what the model carries. */
   lootChanged(): void {
-    this.model.setWeapon(this.weaponDef);
+    this.model.setWeapon(this.weaponDef, this.offHandDef);
   }
 
   /** Anything left to loot. */
   get hasLoot(): boolean {
-    return !this.inventory.isEmpty || this.equipment.weapons[0] !== null;
+    return !this.inventory.isEmpty || this.equipment.weapons[0] !== null || this.equipment.offHands[0] !== null;
   }
 
   get maxHp(): number {
@@ -425,6 +446,7 @@ export class Npc implements Target, Interactable {
     if (this.speechLeft <= 0) this.speech = null;
     this.flinch = moveToward(this.flinch, 0, dt * 1.6);
     this.recoil = moveToward(this.recoil, 0, dt * 5);
+    this.recoilL = moveToward(this.recoilL, 0, dt * 5);
     this.warnCooldown -= dt;
 
     if (this.mode === 'dead') {
@@ -641,9 +663,14 @@ export class Npc implements Target, Interactable {
     const yaw = this.lookYaw;
     const fx = yawToX(yaw);
     const fz = yawToZ(yaw);
-    const reach = 0.4 + muzzleOffset(def.look);
     const muzzleY = this.mount ? 2.34 : 1.38 - CONFIG.player.crouchDrop * this.crouch;
-    const origin = new THREE.Vector3(this.pos.x + fx * reach + fz * 0.18, muzzleY, this.pos.z + fz * reach - fx * 0.18);
+    // Each hand's muzzle (a dual-wielded left gun is mirrored).
+    const muzzle = (hand: Hand) => {
+      const reach = 0.4 + muzzleOffset(weapon.gun(hand).def.look);
+      const side = hand === 'left' ? -0.18 : 0.18;
+      return new THREE.Vector3(this.pos.x + fx * reach + fz * side, muzzleY, this.pos.z + fz * reach - fx * side);
+    };
+    const origin = muzzle('right');
     if (ctx.world.raycast(origin.x, origin.y, origin.z, this.aimPoint.x, this.aimPoint.y, this.aimPoint.z)) {
       // Crouched behind cover with no clear shot: stand up over it (then shoot) …
       if (this.inCover && this.crouch > 0.02) this.popUpLeft = Math.max(this.popUpLeft, 0.4);
@@ -658,11 +685,13 @@ export class Npc implements Target, Interactable {
     let spreadMul = (this.def.inaccuracy ?? nc.inaccuracy) * stance;
     // Same horseback penalty as the player.
     if (this.mount) spreadMul = (this.def.inaccuracy ?? nc.inaccuracy) * (CONFIG.player.spreadMountedMul + this.mount.motor.speed * CONFIG.player.spreadMountedPerSpeed) * 0.5;
-    const shot = weapon.fire(origin, this.aimPoint, spreadMul, yaw);
+    const shot = weapon.fire(muzzle, this.aimPoint, spreadMul, yaw);
     if (shot) {
       ctx.fire(this, shot);
-      this.recoil = 1;
-      this.shotDelay = def.fireInterval + rand(...def.ai.extraDelay);
+      if (shot.hand === 'left') this.recoilL = 1;
+      else this.recoil = 1;
+      // Two guns: the faster dual pace, and less hesitation between shots.
+      this.shotDelay = weapon.interval + rand(...def.ai.extraDelay) * (weapon.dual ? 0.5 : 1);
       // Popped up over cover: stay up a moment, then duck.
       if (this.inCover && this.popUpLeft > 0) this.popUpLeft = nc.crouch.popUpHold;
     }
@@ -914,6 +943,8 @@ export class Npc implements Target, Interactable {
         lookYaw: angleDelta(hy, this.lookYaw),
         draw: this.draw,
         recoil: this.recoil,
+        recoilL: this.recoilL,
+        dual: this.weapon?.dual ?? false,
         reload: this.weapon?.reloadProgress ?? -1,
         lean: false,
         talking: false,
@@ -935,6 +966,8 @@ export class Npc implements Target, Interactable {
       lookYaw: this.lookYaw,
       draw: this.draw,
       recoil: this.recoil,
+      recoilL: this.recoilL,
+      dual: this.weapon?.dual ?? false,
       reload: this.weapon?.reloadProgress ?? -1,
       lean: atPost && r.kind === 'lean' && this.alertLeft <= 0,
       talking: this.talkLeft > 0,

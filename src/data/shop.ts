@@ -17,6 +17,7 @@ export const SHOP: ShopEntry[] = [
   { item: 'ammo_shells', price: 14, quantity: 6, unlockWave: 1 },
   { item: 'bandage', price: 20, quantity: 1, unlockWave: 1 },
   { item: 'revolver', price: 60, quantity: 1, unlockWave: 1 },
+  { item: 'derringer', price: 45, quantity: 1, unlockWave: 2 },
   { item: 'rifle', price: 120, quantity: 1, unlockWave: 2 },
   { item: 'shotgun', price: 150, quantity: 1, unlockWave: 4 },
   // Cosmetics.
@@ -55,6 +56,7 @@ export const MERCHANT_SHOPS: Record<string, MerchantShop> = {
     title: 'GUNS & AMMO',
     stock: [
       { item: 'revolver', price: 60, quantity: 1, unlockWave: 1 },
+      { item: 'derringer', price: 45, quantity: 1, unlockWave: 1 },
       { item: 'rifle', price: 120, quantity: 1, unlockWave: 1 },
       { item: 'shotgun', price: 150, quantity: 1, unlockWave: 1 },
       { item: 'ammo_revolver', price: 12, quantity: 18, unlockWave: 1 },

@@ -5,12 +5,11 @@ import { StaticBatch } from '../../render/StaticBatch';
 import { PAL } from '../../render/palette';
 import { Rng, valueNoise2 } from '../../util/math';
 import { CollisionWorld } from '../Colliders';
+import { ContainerSet } from '../Container';
 import {
-  barrel,
   buildGround,
   building,
   cactus,
-  crate,
   fence,
   hitchingRail,
   mesas,
@@ -79,8 +78,27 @@ export function buildSandboxMap(targets: TargetSystem): WorldData {
     [-18.2, -5.0], [-9.7, -4.4], [-0.6, -5.2], [7.2, -4.3], [16.4, -5.1], [24.2, -4.6],
     [-12.8, 6.0], [-6.4, 6.4], [3.4, 6.2], [11.0, 5.9], [19.6, 6.5], [-17.2, 11.2], [-16.8, -12.3],
   ];
-  for (const [x, z] of barrels) barrel(batch, cw, x, z, rng);
-  for (const [x, z] of [[-11.8, 6.8], [20.8, 6.0], [24.6, -6.0], [-17.0, 4.8], [-17.6, 12.4]] as const) crate(batch, cw, x, z, rng);
+  // Every barrel and crate is a container (each draw keeps the map's random sequence as before).
+  const containers = new ContainerSet(CONFIG.world.seed);
+  for (const [x, z] of barrels) {
+    containers.add(cw, 'barrel', x, z, rng.range(0, Math.PI * 2));
+  }
+  for (const [x, z] of [[-11.8, 6.8], [20.8, 6.0], [24.6, -6.0], [-17.0, 4.8], [-17.6, 12.4]] as const) containers.add(cw, 'crate', x, z, 0, rng.range(0.7, 0.9));
+  // Ammo boxes, weapon crates and chests on the porches and beside the buildings.
+  const extra: [Parameters<ContainerSet['add']>[1], number, number, number][] = [
+    ['chest', -3.2, -5.65, 0],
+    ['chest', -18.85, -3.2, Math.PI / 2],
+    ['weaponCrate', 10.1, -5.75, 0],
+    ['weaponCrate', -18.85, -8.0, Math.PI / 2],
+    ['ammoBox', 8.6, -4.6, 0],
+    ['ammoBox', -12.4, -5.2, 0],
+    ['ammoBox', 22.4, -5.3, 0],
+    ['ammoBox', -18.6, 6.3, Math.PI / 2],
+    ['ammoBox', 5.3, 6.6, 0],
+    ['ammoBox', 28.4, 3.2, Math.PI / 2],
+  ];
+  for (const [kind, x, z, yaw] of extra) containers.add(cw, kind, x, z, yaw);
+  for (const c of containers.items) group.add(c.object);
   // Fence lines on the camera side of the street.
   fence(batch, cw, -14, 9, -6, 9);
   fence(batch, cw, 9, 9, 19, 9);
@@ -139,6 +157,7 @@ export function buildSandboxMap(targets: TargetSystem): WorldData {
     playerSpawn: new THREE.Vector3(-2, 0, 1.5),
     horseSpawn: new THREE.Vector3(-6.5, 0, 2.6),
     horseYaw: Math.PI / 2,
+    containers: containers.items,
   };
 }
 

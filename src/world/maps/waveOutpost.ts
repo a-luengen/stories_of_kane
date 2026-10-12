@@ -5,7 +5,8 @@ import { PAL } from '../../render/palette';
 import { StaticBatch } from '../../render/StaticBatch';
 import { Rng, valueNoise2 } from '../../util/math';
 import { CollisionWorld } from '../Colliders';
-import { barrel, buildGround, cactus, cliff, crate, mesas, rock, ruin, sandbags, shrub, trough, wagon, well, type Occluder, type WorldData } from '../props';
+import { ContainerSet } from '../Container';
+import { buildGround, cactus, cliff, mesas, rock, ruin, sandbags, shrub, trough, wagon, well, type Occluder, type WorldData } from '../props';
 
 /** Inner half-size of the canyon (walls stand at ±WALL). */
 const WALL = 30;
@@ -105,14 +106,22 @@ export function buildOutpostMap(_targets: TargetSystem): WorldData {
   coverBox(-1.5, -10.5, 1.1, 0.4);
   coverBox(13, 1.5, 1.1, 0.4);
 
-  // Crate / barrel clusters.
+  // Crate / barrel clusters (all of them lootable).
+  const containers = new ContainerSet(777);
   for (const [cx, cz] of [[-5, 8], [8, -4.5], [-13, -13], [14, 14], [-21, -2], [21, 5]] as const) {
-    crate(batch, cw, cx, cz, rng);
-    crate(batch, cw, cx + 0.95, cz + 0.2, rng);
-    barrel(batch, cw, cx - 0.4, cz + 1.1, rng);
-    if (rng.next() < 0.6) barrel(batch, cw, cx + 1.4, cz + 1.2, rng);
+    containers.add(cw, 'crate', cx, cz, 0, rng.range(0.7, 0.9));
+    containers.add(cw, 'crate', cx + 0.95, cz + 0.2, 0, rng.range(0.7, 0.9));
+    containers.add(cw, 'barrel', cx - 0.4, cz + 1.1, rng.range(0, Math.PI * 2));
+    if (rng.next() < 0.6) containers.add(cw, 'barrel', cx + 1.4, cz + 1.2, rng.range(0, Math.PI * 2));
     coverBox(cx + 0.5, cz + 0.5, 1.3, 1.2);
   }
+  // A few more around the square: ammo boxes, a weapon crate and a chest.
+  containers.add(cw, 'ammoBox', -4.6, 7.1, 0);
+  containers.add(cw, 'ammoBox', 9.2, -5.6, Math.PI / 2);
+  containers.add(cw, 'ammoBox', 22.5, 5.2, Math.PI / 2);
+  containers.add(cw, 'weaponCrate', -12.6, -11.2, 0);
+  containers.add(cw, 'chest', 9.6, 2.2, Math.PI / 2);
+  for (const c of containers.items) group.add(c.object);
 
   // Sandbag lines.
   for (const [x, z, len, alongX] of [[-12, 3, 3, false], [3, 13, 3.5, true], [17.5, -3, 3, false], [-3, -17, 3.5, true], [21, -19, 3, true], [-22, 18, 3, true]] as const) {
@@ -148,5 +157,6 @@ export function buildOutpostMap(_targets: TargetSystem): WorldData {
     playerSpawn: new THREE.Vector3(0, 0, 1.5),
     horseSpawn: null,
     horseYaw: 0,
+    containers: containers.items,
   };
 }

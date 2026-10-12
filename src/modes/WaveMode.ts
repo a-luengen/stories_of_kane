@@ -95,6 +95,8 @@ export class WaveMode implements GameMode {
       ),
     );
     s.scene.add(this.merchant.root);
+    // Containers hold loot for the wave being fought (restocked for the next one in each break).
+    for (const c of s.map.containers) c.wave = this.director.wave;
     this.handle(this.director.start());
   }
 
@@ -165,6 +167,8 @@ export class WaveMode implements GameMode {
           this.economy.earn(e.bonus);
           this.pop(`+$${e.bonus}`);
           this.showBanner('WAVE CLEARED', `+$${e.bonus}   E: TRADE AT THE WAGON`, CONFIG.wave.clearedBanner);
+          // Lids shut, fresh loot (for the coming wave) on the next open.
+          for (const c of this.session.map.containers) c.restock(this.director.wave + 1);
           break;
         case 'horseArrives':
           this.horseArrives();
@@ -211,6 +215,8 @@ export class WaveMode implements GameMode {
       defendsOthers: false,
       appearance: banditAppearance(a),
       weapon: weaponId,
+      // Both guns are lootable (the off-hand uses the same rounds as a revolver).
+      offHandWeapon: spawn.dual && a.offHandWeapons ? a.offHandWeapons[Math.floor(Math.random() * a.offHandWeapons.length)] : null,
       inventory: ammo ? Array.from({ length: boxes }, () => ({ item: ammo.id })) : [],
       spawn: [at.x, at.z],
       routine: { kind: 'idle', at: [at.x, at.z], facing: dirToYaw(-at.x, -at.z) },

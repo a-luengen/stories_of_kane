@@ -12,8 +12,12 @@ export interface PlayerPose {
   moveYaw: number;
   /** World yaw the torso/gun faces. */
   aimYaw: number;
-  /** 0..1, decays after each shot. */
+  /** 0..1, decays after each shot (right hand). */
   recoil: number;
+  /** Left hand's kick when dual wielding. */
+  recoilL: number;
+  /** Two guns in the active slot: both arms aim. */
+  dual: boolean;
   /** 0..1 progress, or -1 when not reloading. */
   reload: number;
   mounted: boolean;
@@ -56,8 +60,8 @@ export class PlayerModel {
     this.rig.applyAppearance(a);
   }
 
-  setWeapons(defs: readonly (WeaponDef | null)[]): void {
-    this.rig.setWeapons(defs);
+  setWeapons(defs: readonly (WeaponDef | null)[], offDefs: readonly (WeaponDef | null)[] = []): void {
+    this.rig.setWeapons(defs, offDefs);
   }
 
   animate(dt: number, p: PlayerPose): void {
@@ -112,6 +116,7 @@ export class PlayerModel {
     const inHand = p.draw > 0.5;
     this.rig.placeWeapons(p.active, inHand);
     const gun = p.active !== null ? this.rig.weaponMesh(p.active) : null;
+    const offGun = p.dual && p.active !== null ? this.rig.offWeaponMesh(p.active) : null;
 
     // Arms: gun arm points forward, kicks up on recoil, drops while reloading.
     // While drawing it goes rest → hand at the holster / over the shoulder → aim (and back when holstering).
@@ -125,8 +130,10 @@ export class PlayerModel {
       armRoll = 0.5 * k;
       armYaw = 0;
       if (gun) gun.rotation.z = Math.sin(p.reload * 30) * 0.15 * k;
+      if (offGun) offGun.rotation.z = -Math.sin(p.reload * 30 + 1) * 0.15 * k;
     } else if (gun && inHand) {
       gun.rotation.z = 0;
+      if (offGun) offGun.rotation.z = 0;
     }
     if (p.draw < 1) {
       const rest = p.mounted ? -0.3 : this.legSwing(p) * 0.6 - 0.1;
@@ -148,14 +155,44 @@ export class PlayerModel {
     armR.rotation.x = damp(armR.rotation.x, armPitch, reloading ? 14 : drawing ? 24 : 40, dt);
     armR.rotation.z = damp(armR.rotation.z, armRoll, 14, dt);
     armR.rotation.y = armYaw;
-    upper.rotation.x += -p.recoil * (p.longGun ? 0.06 : 0.12);
+    upper.rotation.x += -Math.max(p.recoil, p.recoilL) * (p.longGun ? 0.06 : 0.12);
 
-    // Free arm swings, or supports the forestock of a drawn long gun.
-    const support = p.longGun && !reloading ? Math.max(0, p.draw * 2 - 1) : 0;
-    const freeArm = reloading ? -0.9 : p.mounted ? -0.5 : -this.legSwing(p) * 0.6 - 0.1;
-    armL.rotation.x = damp(armL.rotation.x, lerp(freeArm, -Math.PI / 2 + 0.15 - lean, support), 14, dt);
-    armL.rotation.y = damp(armL.rotation.y, 0.55 * support, 14, dt);
-    armL.rotation.z = damp(armL.rotation.z, reloading ? -0.4 : -0.08 * (1 - support), 14, dt);
+    if (p.dual) {
+      // Dual wielding: the left arm mirrors the gun arm (aim, own recoil, draw from the belt, reload).
+      let pitchL = -Math.PI / 2 - p.recoilL * 0.55;
+      let rollL = 0;
+      let yawL = 0.12;
+      if (reloading) {
+        const k = Math.sin(Math.min(1, p.reload) * Math.PI);
+        pitchL = -0.6 - 0.5 * k;
+        rollL = -0.5 * k;
+        yawL = 0;
+      }
+      if (p.draw < 1) {
+        const rest = p.mounted ? -0.3 : -this.legSwing(p) * 0.6 - 0.1;
+        const t = p.draw;
+        // The off-hand gun comes out of the front of the belt.
+        if (t < 0.5) {
+          pitchL = lerp(rest, 0.1, t * 2);
+          rollL = lerp(-0.06, 0.35, t * 2);
+        } else {
+          pitchL = lerp(0.1, pitchL, t * 2 - 1);
+          rollL = lerp(0.35, rollL, t * 2 - 1);
+        }
+        yawL *= Math.max(0, t * 2 - 1);
+      }
+      if (p.draw > 0.5) pitchL -= lean;
+      armL.rotation.x = damp(armL.rotation.x, pitchL, reloading ? 14 : drawing ? 24 : 40, dt);
+      armL.rotation.z = damp(armL.rotation.z, rollL, 14, dt);
+      armL.rotation.y = yawL;
+    } else {
+      // Free arm swings, or supports the forestock of a drawn long gun.
+      const support = p.longGun && !reloading ? Math.max(0, p.draw * 2 - 1) : 0;
+      const freeArm = reloading ? -0.9 : p.mounted ? -0.5 : -this.legSwing(p) * 0.6 - 0.1;
+      armL.rotation.x = damp(armL.rotation.x, lerp(freeArm, -Math.PI / 2 + 0.15 - lean, support), 14, dt);
+      armL.rotation.y = damp(armL.rotation.y, 0.55 * support, 14, dt);
+      armL.rotation.z = damp(armL.rotation.z, reloading ? -0.4 : -0.08 * (1 - support), 14, dt);
+    }
     head.rotation.x = -p.recoil * 0.1 - lean * 0.8;
     // The head turns the rest of the way to the aim (when holstered the torso only half-follows).
     const aimRel = p.mounted ? angleDelta(p.horseYaw, p.aimYaw) : p.aimYaw;

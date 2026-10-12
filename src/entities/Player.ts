@@ -10,7 +10,7 @@ import { segmentVsCylinder, type CollisionWorld, type CircleCollider } from '../
 import type { BurstKind } from './Particles';
 import { PlayerModel } from './PlayerModel';
 import type { Hitbox, HitInfo, Target } from './Targets';
-import { WeaponState, type ShotRequest } from './Weapon';
+import { GunSet, WeaponState, type Hand, type ShotRequest } from './Weapon';
 import { muzzleOffset } from './WeaponModel';
 import { dirToYaw, lerp, moveToward, yawToX, yawToZ } from '../util/math';
 
@@ -45,6 +45,8 @@ export class Player implements Target {
   private swapping = false;
   private activeItem: ItemInstance | null = null;
   private states = new WeakMap<ItemInstance, WeaponState>();
+  /** Per main gun: the pair it forms with whatever is in its off-hand sub-slot. */
+  private sets = new WeakMap<ItemInstance, GunSet>();
   /** Seconds left to show "No ammo". */
   noAmmo = 0;
   readonly pos = new THREE.Vector3();
@@ -55,6 +57,8 @@ export class Player implements Target {
   sprinting = false;
 
   recoil = 0;
+  /** Left-hand gun's kick (dual wielding). */
+  recoilL = 0;
   /** 0 = holstered, 1 = drawn; in between plays the draw (or holster). */
   draw = 0;
   hp = CONFIG.player.maxHp;
@@ -94,10 +98,23 @@ export class Player implements Target {
     return this.model.root;
   }
 
-  /** State of the weapon in the active slot (null when the slot is empty / none selected). */
-  get weapon(): WeaponState | null {
-    const item = this.active !== null ? this.equipment.weapons[this.active] : null;
-    return item ? this.stateFor(item) : null;
+  /** The gun(s) in the active slot (null when the slot is empty / none selected). */
+  get weapon(): GunSet | null {
+    return this.active !== null ? this.gunsIn(this.active) : null;
+  }
+
+  /** The gun(s) in a weapon slot: the main gun, plus the off-hand gun when dual wielding. */
+  gunsIn(slot: number): GunSet | null {
+    const item = this.equipment.weapons[slot];
+    if (!item) return null;
+    let set = this.sets.get(item);
+    if (!set) {
+      set = new GunSet(this.stateFor(item));
+      this.sets.set(item, set);
+    }
+    const off = this.equipment.offHands[slot];
+    set.setLeft(off ? this.stateFor(off) : null);
+    return set;
   }
 
   stateFor(item: ItemInstance): WeaponState {
@@ -130,7 +147,7 @@ export class Player implements Target {
     if (this.equipment.version === this.seenVersion) return;
     this.seenVersion = this.equipment.version;
     this.model.setAppearance(this.appearance());
-    this.model.setWeapons(this.equipment.weaponDefs());
+    this.model.setWeapons(this.equipment.weaponDefs(), this.equipment.offHandDefs());
     const item = this.active !== null ? this.equipment.weapons[this.active] : null;
     if (item !== this.activeItem) {
       if (this.activeItem) this.states.get(this.activeItem)?.cancelReload();
@@ -220,6 +237,7 @@ export class Player implements Target {
     const az = input.aim.z - this.pos.z;
     if (ax * ax + az * az > 0.01) this.aimYaw = dirToYaw(ax, az);
     this.recoil = moveToward(this.recoil, 0, dt * 5);
+    this.recoilL = moveToward(this.recoilL, 0, dt * 5);
     this.noAmmo = Math.max(0, this.noAmmo - dt);
     const slots = this.equipment.weapons;
 
@@ -255,7 +273,7 @@ export class Player implements Target {
 
     // Draw / holster animation; a switch holsters, swaps, then draws (quicker than a plain draw).
     const weapon = this.weapon;
-    const drawTime = this.swapping ? CONFIG.items.weaponSwapTime / 2 : (weapon?.def.drawTime ?? 0.4);
+    const drawTime = this.swapping ? CONFIG.items.weaponSwapTime / 2 : (weapon?.drawTime ?? 0.4);
     this.draw = moveToward(this.draw, this.drawTarget, dt / drawTime);
     if (this.draw === 0 && this.pending !== null) {
       this.active = this.pending;
@@ -271,7 +289,7 @@ export class Player implements Target {
     if (this.draw < 1 || this.healLeft > 0) return null;
     if (this.reloadQueued) {
       this.reloadQueued = false;
-      if (!weapon.startReload() && weapon.ammo < weapon.def.magazine && weapon.reserve <= 0) this.noAmmo = 1.5;
+      if (!weapon.startReload() && weapon.ammo < weapon.magazine && weapon.reserve <= 0) this.noAmmo = 1.5;
     }
     if (!input.fireHeld) return null;
     if (weapon.ammo <= 0 && weapon.reserve <= 0) {
@@ -287,12 +305,12 @@ export class Player implements Target {
     // The gun arm sits on the model's local +X, which is (fz, -fx) in world space.
     const sx = fz;
     const sz = -fx;
-    const reach = 0.4 + muzzleOffset(weapon.def.look);
-    const origin = new THREE.Vector3(
-      this.pos.x + fx * reach + sx * 0.18,
-      this.pos.y + muzzleH,
-      this.pos.z + fz * reach + sz * 0.18,
-    );
+    // Each hand's muzzle: the right one on +X, a dual-wielded left gun mirrored on -X.
+    const origin = (hand: Hand) => {
+      const reach = 0.4 + muzzleOffset(weapon.gun(hand).def.look);
+      const side = hand === 'left' ? -0.18 : 0.18;
+      return new THREE.Vector3(this.pos.x + fx * reach + sx * side, this.pos.y + muzzleH, this.pos.z + fz * reach + sz * side);
+    };
 
     const pc = CONFIG.player;
     let spreadMul = 1;
@@ -302,7 +320,8 @@ export class Player implements Target {
     else spreadMul = lerp(moving ? pc.spreadMovingMul : 1, moving ? pc.crouch.movingSpreadMul : pc.crouch.spreadMul, this.crouch);
     const shot = weapon.fire(origin, input.aim, spreadMul, this.aimYaw);
     if (shot) {
-      this.recoil = 1;
+      if (shot.hand === 'left') this.recoilL = 1;
+      else this.recoil = 1;
       this.idle = 0;
     }
     return shot;
@@ -414,6 +433,8 @@ export class Player implements Target {
       moveYaw: this.moveYaw,
       aimYaw: this.aimYaw,
       recoil: this.recoil,
+      recoilL: this.recoilL,
+      dual: this.weapon?.dual ?? false,
       reload: this.reloadProgress,
       mounted: this.mounted,
       horseYaw: this.mountYaw,

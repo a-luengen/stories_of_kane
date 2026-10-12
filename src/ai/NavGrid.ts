@@ -24,7 +24,7 @@ export class NavGrid {
     world: CollisionWorld,
     readonly half: number,
     readonly cell = 0.5,
-    radius = 0.42,
+    private radius = 0.42,
   ) {
     this.n = Math.ceil((half * 2) / cell);
     const total = this.n * this.n;
@@ -37,9 +37,23 @@ export class NavGrid {
       for (let i = 0; i < this.n; i++) {
         const x = this.cx(i);
         const z = this.cx(j);
-        const p = { x, z };
-        world.resolveCircle(p, radius);
-        if (Math.abs(p.x - x) + Math.abs(p.z - z) > 1e-4) this.blocked[j * this.n + i] = 1;
+        this.blocked[j * this.n + i] = this.blockedAt(world, x, z) ? 1 : 0;
+      }
+    }
+  }
+
+  private blockedAt(world: CollisionWorld, x: number, z: number): boolean {
+    const p = { x, z };
+    world.resolveCircle(p, this.radius);
+    return Math.abs(p.x - x) + Math.abs(p.z - z) > 1e-4;
+  }
+
+  /** Re-check the cells around an area whose colliders changed (a prop destroyed or rebuilt). */
+  refresh(world: CollisionWorld, minX: number, minZ: number, maxX: number, maxZ: number): void {
+    const pad = this.radius + this.cell;
+    for (let j = this.ix(minZ - pad); j <= this.ix(maxZ + pad); j++) {
+      for (let i = this.ix(minX - pad); i <= this.ix(maxX + pad); i++) {
+        this.blocked[j * this.n + i] = this.blockedAt(world, this.cx(i), this.cx(j)) ? 1 : 0;
       }
     }
   }

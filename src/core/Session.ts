@@ -146,6 +146,13 @@ export class Session {
     this.npcs = new NpcSystem(opts.npcs, this.world, this.nav, wd.cover);
     this.scene.add(this.npcs.group);
     for (const n of this.npcs.npcs) this.registerNpc(n);
+    for (const c of wd.containers) {
+      c.onOpen = (box) => this.openUi(() => this.ui.openLoot(box));
+      c.onCollisionChanged = (box) => {
+        const b = box.bounds;
+        this.nav.refresh(this.world, b.minX, b.minZ, b.maxX, b.maxZ);
+      };
+    }
 
     this.coverDebug = new CoverDebug(this.world);
     this.scene.add(this.coverDebug.group);
@@ -302,7 +309,13 @@ export class Session {
     const p = this.player;
     p.update(dt);
     if (!input.mouseDown) this.fireBlocked = false;
-    const interactables: Interactable[] = [...this.horses, ...this.npcs.npcs, ...this.worldItems.items, ...(this.hooks.interactables?.() ?? [])];
+    const interactables: Interactable[] = [
+      ...this.horses,
+      ...this.npcs.npcs,
+      ...this.worldItems.items,
+      ...this.map.containers,
+      ...(this.hooks.interactables?.() ?? []),
+    ];
     this.interactTarget = p.mounted || p.dead ? null : pickInteractable(interactables, p.pos, p.aimYaw);
     if (input.consume('KeyE') && !p.dead) {
       // Context-sensitive: riding always dismounts, on foot use whatever is targeted.
@@ -523,6 +536,27 @@ export class Session {
     const kinds = imp.surface === 'target' ? ['dust' as BurstKind] : IMPACT_BURSTS[imp.surface];
     kinds.forEach((k, i) => this.particles.burst(k, imp.point, imp.normal, i === 0 ? 1 : 0.6));
     if (imp.surface === 'dirt') this.particles.burst('dust', imp.point, imp.normal, 0.6);
+    if (imp.collider) this.hitContainer(imp);
+  }
+
+  /** Bullets wear crates and ammo boxes down; a broken one bursts and spills (some of) its loot. */
+  private hitContainer(imp: Impact): void {
+    const box = this.map.containers.find((c) => c.owns(imp.collider));
+    if (!box) return;
+    const spilled = box.damage(imp.damage);
+    if (!spilled) return;
+    const at = box.position;
+    for (let i = 0; i < 4; i++) {
+      const p = at.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.25 + Math.random() * 0.4, (Math.random() - 0.5) * 0.6));
+      this.particles.burst('wood', p, new THREE.Vector3(0, 1, 0), 1.3);
+    }
+    this.particles.burst('dust', at.clone().setY(0.2), undefined, 1.4);
+    // Scattered around the wreck, starting on the side the shot came from.
+    const back = dirToYaw(-imp.dir.x, -imp.dir.z);
+    spilled.forEach((item, i) => {
+      const w = this.worldItems.spawn(item, at, back + i * 2.1, 0.75);
+      w.onPickup = (wi) => this.pickUp(wi);
+    });
   }
 
   // ------------------------------------------------------------------------------ rendering
@@ -544,6 +578,8 @@ export class Session {
     for (const n of this.npcs.npcs) n.sync(alpha, animDt);
     this.projectiles.sync(alpha);
     this.worldItems.update(animDt);
+    // Lids keep moving while the loot view is open (the world behind it is paused).
+    for (const c of this.map.containers) c.update(frameDt);
 
     // Camera: follow the (interpolated) player, lead a little towards the aim and travel direction.
     const base = this.riding ? this.riding.model.root.position : p.model.root.position;
@@ -570,9 +606,19 @@ export class Session {
     const menuOpen = paused || this.ui.open;
     engine.hud.draw(frameDt, {
       weaponBar: {
-        slots: p.equipment.weapons.map((item, i) => ({ icon: item ? engine.icons.get(item.defId, 8) : null, selected: p.active === i })),
+        slots: p.equipment.weapons.map((item, i) => {
+          const off = p.equipment.offHands[i];
+          return { icon: item ? engine.icons.get(item.defId, 8) : null, offIcon: off ? engine.icons.get(off.defId, 8) : null, selected: p.active === i };
+        }),
         drawn: p.drawn,
-        ammo: w ? { loaded: w.ammo, magazine: w.def.magazine, reserve: w.reserve } : null,
+        ammo: w
+          ? {
+              loaded: w.right.ammo,
+              magazine: w.right.def.magazine,
+              reserve: w.reserve,
+              left: w.left ? { loaded: w.left.ammo, magazine: w.left.def.magazine } : undefined,
+            }
+          : null,
         reloadProgress: p.reloadProgress,
         noAmmo: p.noAmmo > 0,
         stance: p.mounted ? null : p.crouched ? 'crouch' : 'stand',

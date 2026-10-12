@@ -2,11 +2,11 @@ import { UI } from './theme';
 import { drawText, textWidth } from './PixelFont';
 
 export interface WeaponBarState {
-  slots: { icon: HTMLCanvasElement | null; selected: boolean }[];
+  slots: { icon: HTMLCanvasElement | null; selected: boolean; /** Dual wielding: the left-hand gun. */ offIcon?: HTMLCanvasElement | null }[];
   /** The selected weapon is out (not holstered). */
   drawn: boolean;
-  /** Active weapon ammo, or null when no weapon is selected. */
-  ammo: { loaded: number; magazine: number; reserve: number } | null;
+  /** Active weapon ammo, or null when no weapon is selected. Dual wielding adds the left gun's. */
+  ammo: { loaded: number; magazine: number; reserve: number; left?: { loaded: number; magazine: number } } | null;
   /** 0..1 or -1. */
   reloadProgress: number;
   noAmmo: boolean;
@@ -35,7 +35,13 @@ export function drawWeaponBar(ctx: CanvasRenderingContext2D, x: number, y: numbe
     ctx.fillRect(sx, y + SLOT_H - 1, SLOT_W, 1);
     ctx.fillRect(sx, y, 1, SLOT_H);
     ctx.fillRect(sx + SLOT_W - 1, y, 1, SLOT_H);
-    if (slot.icon) drawIconFit(ctx, slot.icon, sx + 1, y + 1, SLOT_W - 2, SLOT_H - 2, false, slot.selected ? 1 : 0.6);
+    const a = slot.selected ? 1 : 0.6;
+    if (slot.icon && slot.offIcon) {
+      // Two guns: side by side, the left-hand one on the left.
+      const half = Math.floor((SLOT_W - 2) / 2);
+      drawIconFit(ctx, slot.offIcon, sx + 1, y + 1, half, SLOT_H - 2, false, a);
+      drawIconFit(ctx, slot.icon, sx + 1 + half, y + 1, SLOT_W - 2 - half, SLOT_H - 2, false, a);
+    } else if (slot.icon) drawIconFit(ctx, slot.icon, sx + 1, y + 1, SLOT_W - 2, SLOT_H - 2, false, a);
     drawText(ctx, String(i + 1), sx + 2, y + 2, slot.selected ? UI.brassLight : UI.cream, UI.ink);
   });
 
@@ -58,11 +64,12 @@ export function drawWeaponBar(ctx: CanvasRenderingContext2D, x: number, y: numbe
   if (s.ammo) {
     const ty = y - 8;
     const a = s.ammo;
-    const txt = `${a.loaded}/${a.magazine}`;
+    // Dual wielding: "L 4/6 | R 2/6 | 37".
+    const txt = a.left ? `L ${a.left.loaded}/${a.left.magazine} | R ${a.loaded}/${a.magazine}` : `${a.loaded}/${a.magazine}`;
     ctx.fillStyle = 'rgba(31,21,16,0.55)';
     const res = `| ${a.reserve}`;
     ctx.fillRect(x, ty - 2, textWidth(txt) + textWidth(res) + 10, 9);
-    drawText(ctx, txt, x + 3, ty, a.loaded === 0 ? UI.rust : UI.cream);
+    drawText(ctx, txt, x + 3, ty, a.loaded === 0 && (!a.left || a.left.loaded === 0) ? UI.rust : UI.cream);
     drawText(ctx, res, x + 7 + textWidth(txt), ty, a.reserve === 0 ? UI.rust : UI.sand);
     if (s.noAmmo && Math.floor(time * 4) % 2 === 0) drawText(ctx, 'NO AMMO', x + 14 + textWidth(txt) + textWidth(res), ty, UI.red, UI.ink);
     else if (s.reloadProgress >= 0) {

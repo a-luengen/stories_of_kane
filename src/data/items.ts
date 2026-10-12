@@ -34,6 +34,16 @@ const DEFS: ItemDef[] = [
     weaponDefId: 'revolver',
   },
   {
+    id: 'derringer',
+    name: 'Derringer',
+    description: 'Two-shot pocket pistol. Quick to draw, short-ranged. Pairs with a revolver.',
+    category: 'weapon',
+    size: { w: 1, h: 2 },
+    stackable: false,
+    maxStack: 1,
+    weaponDefId: 'derringer',
+  },
+  {
     id: 'rifle',
     name: 'Rifle',
     description: 'Lever-action rifle. Slow, but true at long range.',

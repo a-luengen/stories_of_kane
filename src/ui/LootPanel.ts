@@ -1,17 +1,17 @@
 import type { Equipment } from '../items/Equipment';
 import type { GridContainer } from '../items/GridContainer';
-import { gridZone, weaponSlotZones } from './InventoryPanel';
+import { gridZone, weaponSlotZone, weaponSlotZones } from './InventoryPanel';
 import { CELL, type Layout, type Zone } from './widgets';
 
 /**
- * Split view for looting: the player's grid and weapon slots on the left, the corpse's grid,
- * its weapon and a "Take all" button on the right.
+ * Split view for looting: the player's grid and weapon slots on the left, the corpse's or
+ * container's grid (and a corpse's weapon) with a "Take all" button on the right.
  */
 export function lootLayout(
   W: number,
   H: number,
   player: { equipment: Equipment; inventory: GridContainer },
-  corpse: { name: string; equipment: Equipment; inventory: GridContainer },
+  corpse: { name: string; equipment?: Equipment; inventory: GridContainer },
   takeAll: () => void,
 ): Layout {
   const gw = Math.max(player.inventory.w, corpse.inventory.w) * CELL;
@@ -27,8 +27,8 @@ export function lootLayout(
     gridZone(player.inventory, left.x + 6, y + 8),
     ...weaponSlotZones(player.equipment, left.x + 6, y + 8 + gh + 6, gw),
     gridZone(corpse.inventory, right.x + 6, y + 8),
-    { kind: 'slot', holder: corpse.equipment, key: 'w0', label: 'GUN', x: right.x + 6, y: y + 8 + gh + 6, w: 50, h: 20 },
-    { kind: 'button', label: 'TAKE ALL', action: takeAll, x: right.x + pw - 6 - 50, y: y + 8 + gh + 9, w: 50, h: 13 },
+    ...(corpse.equipment ? weaponSlotZone(corpse.equipment, 0, 'GUN', right.x + 6, y + 8 + gh + 6, 50) : []),
+    { kind: 'button', label: 'TAKE ALL [R]', action: takeAll, x: right.x + pw - 6 - 66, y: y + 8 + gh + 9, w: 66, h: 13 },
   ];
   return { panels: [left, right], zones };
 }

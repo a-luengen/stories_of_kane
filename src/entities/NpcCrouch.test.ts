@@ -10,6 +10,7 @@ import { CollisionWorld } from '../world/Colliders';
 import type { Horse } from './Horse';
 import type { Npc } from './Npc';
 import { NpcSystem } from './NpcSystem';
+import { Rng } from '../util/math';
 import { TargetSystem } from './Targets';
 import type { ShotRequest } from './Weapon';
 
@@ -83,6 +84,8 @@ describe('low cover', () => {
 
 describe('NPC crouching', () => {
   it('riflemen crouch behind low cover and pop up to shoot over it', () => {
+    const rng = new Rng(7); // deterministic hold times, delays and spread
+    vi.spyOn(Math, 'random').mockImplementation(() => rng.next());
     const { cw, npc, log, run } = duel(bandit('rifle', 'rifle', 'cover', [3, 3]));
     run(12);
     const inCover = log.filter((s) => Math.hypot(s.x, s.z) < 1.4 && s.z > 0.4);

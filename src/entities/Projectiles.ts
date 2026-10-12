@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../config';
 import type { WeaponDef } from '../data/types';
 import { PAL } from '../render/palette';
-import type { CollisionWorld, Surface } from '../world/Colliders';
+import type { Collider, CollisionWorld, Surface } from '../world/Colliders';
 import type { TargetSystem, Target } from './Targets';
 import { falloff } from './Weapon';
 
@@ -16,6 +16,8 @@ export interface Impact {
   damage: number;
   shooter: Target | null;
   weapon: WeaponDef;
+  /** The static collider that stopped it (props), if any. */
+  collider: Collider | null;
 }
 
 interface Bullet {
@@ -71,17 +73,17 @@ export class ProjectileSystem {
       const th = targets.raycast(a, e, b.shooter);
       const dir = this.tmpA.copy(b.vel).normalize();
       const step = b.vel.length() * dt;
-      const hit = (t: number, normal: THREE.Vector3, surface: Surface | 'target', target: Target | null) => {
+      const hit = (t: number, normal: THREE.Vector3, surface: Surface | 'target', target: Target | null, collider: Collider | null = null) => {
         const point = a.clone().lerp(e, t);
         const damage = b.weapon.damage * falloff(b.weapon, b.travelled + step * t);
-        onImpact({ point, normal, dir: dir.clone(), surface, target, damage, shooter: b.shooter, weapon: b.weapon });
+        onImpact({ point, normal, dir: dir.clone(), surface, target, damage, shooter: b.shooter, weapon: b.weapon, collider });
         b.pos.copy(point);
         b.alive = false;
       };
       if (th && (!wh || th.t <= wh.t)) {
         hit(th.t, th.normal, 'target', th.target);
       } else if (wh) {
-        hit(wh.t, new THREE.Vector3(wh.nx, wh.ny, wh.nz), wh.surface, null);
+        hit(wh.t, new THREE.Vector3(wh.nx, wh.ny, wh.nz), wh.surface, null, wh.collider);
       } else {
         b.pos.copy(e);
         b.travelled += step;

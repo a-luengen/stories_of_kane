@@ -13,8 +13,12 @@ export interface NpcPose {
   lookYaw: number;
   /** 0 = weapon stowed, 1 = drawn and aimed; values in between play the draw (or holster, going down). */
   draw: number;
-  /** 0..1, decays after each shot. */
+  /** 0..1, decays after each shot (right hand). */
   recoil: number;
+  /** Left hand's kick when dual wielding (optional for single-gun poses). */
+  recoilL?: number;
+  /** Two guns: both arms aim. */
+  dual?: boolean;
   /** 0..1 progress, or -1 when not reloading. */
   reload: number;
   lean: boolean;
@@ -38,6 +42,7 @@ export interface NpcPose {
 export class NpcModel {
   readonly rig: CharacterRig;
   private weapon: WeaponDef | null = null;
+  private offHand: WeaponDef | null = null;
 
   private phase = 0;
   private time = 0;
@@ -59,9 +64,10 @@ export class NpcModel {
   }
 
   /** Change the carried weapon (e.g. after being looted). */
-  setWeapon(weapon: WeaponDef | null): void {
+  setWeapon(weapon: WeaponDef | null, offHand: WeaponDef | null = null): void {
     this.weapon = weapon;
-    this.rig.setWeapons([weapon]);
+    this.offHand = weapon ? offHand : null;
+    this.rig.setWeapons([weapon], [this.offHand]);
     this.rig.placeWeapons(0, false, true);
   }
 
@@ -148,11 +154,17 @@ export class NpcModel {
       const t = p.draw;
       r = t < 0.5 ? mix(r, reach, t * 2) : mix(reach, aim, (t - 0.5) * 2);
       if (this.longGun && t > 0.5) l = mix(l, { x: -Math.PI / 2 + 0.15 - lean, y: 0.55, z: 0 }, (t - 0.5) * 2);
+      if (p.dual && this.offHand) {
+        // Second gun: out of the belt, then aimed with the right one (its own kick).
+        const reachL = { x: 0.1, y: 0, z: 0.35 };
+        const aimL = { x: -Math.PI / 2 - (p.recoilL ?? 0) * 0.5 - lean, y: 0.12, z: 0 };
+        l = t < 0.5 ? mix(l, reachL, t * 2) : mix(reachL, aimL, (t - 0.5) * 2);
+      }
     }
     if (p.reload >= 0) {
       const k = Math.sin(Math.min(1, p.reload) * Math.PI);
       r = { x: -0.7 - 0.4 * k, y: 0, z: 0.4 * k };
-      l = { x: -0.9, y: 0.3, z: -0.3 };
+      l = p.dual ? { x: -0.7 - 0.4 * k, y: 0, z: -0.4 * k } : { x: -0.9, y: 0.3, z: -0.3 };
     }
     if (p.talking && !aiming) l = { x: -0.7 + Math.sin(this.time * 5) * 0.25, y: 0, z: -0.25 };
     if (p.inspect && !aiming) {

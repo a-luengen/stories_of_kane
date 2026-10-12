@@ -157,7 +157,7 @@ const BUILDERS: Record<ClothingKind, Builder> = {
   },
 };
 
-export type WeaponAnchor = 'hand' | 'hipR' | 'hipL' | 'back1' | 'back2';
+export type WeaponAnchor = 'hand' | 'handL' | 'hipR' | 'hipL' | 'belt1' | 'belt2' | 'back1' | 'back2';
 
 /**
  * Shared character skeleton (player and NPCs), forward = +Z:
@@ -181,8 +181,11 @@ export class CharacterRig implements RigBones {
   readonly armR = new THREE.Group();
   readonly anchors: Record<WeaponAnchor, THREE.Group> = {
     hand: new THREE.Group(),
+    handL: new THREE.Group(),
     hipR: new THREE.Group(),
     hipL: new THREE.Group(),
+    belt1: new THREE.Group(),
+    belt2: new THREE.Group(),
     back1: new THREE.Group(),
     back2: new THREE.Group(),
   };
@@ -194,6 +197,9 @@ export class CharacterRig implements RigBones {
   private layer: THREE.Mesh[] = [];
   private weapons: (THREE.Group | null)[] = [];
   private weaponDefs: (WeaponDef | null)[] = [];
+  /** Off-hand guns (dual wielding), one per weapon slot. */
+  private offWeapons: (THREE.Group | null)[] = [];
+  private offDefs: (WeaponDef | null)[] = [];
 
   constructor(appearance?: AppearanceConfig, private bodyless = false) {
     this.root.add(this.body);
@@ -212,7 +218,12 @@ export class CharacterRig implements RigBones {
     this.upper.add(this.armL, this.armR);
     this.anchors.hand.position.set(0, -0.52, 0);
     this.armR.add(this.anchors.hand);
-    this.hips.add(this.anchors.hipR, this.anchors.hipL);
+    this.anchors.handL.position.set(0, -0.52, 0);
+    this.armL.add(this.anchors.handL);
+    this.hips.add(this.anchors.hipR, this.anchors.hipL, this.anchors.belt1, this.anchors.belt2);
+    // Off-hand guns stowed: tucked into the front of the belt, grip up, canted.
+    this.anchors.belt1.rotation.set(0.15, 0, -0.35);
+    this.anchors.belt2.rotation.set(0.15, 0, 0.35);
     // Long guns slung diagonally across the back, crossing if there are two.
     this.anchors.back1.position.set(0, 0.28, -0.17);
     this.anchors.back1.rotation.z = Math.PI - 0.65;
@@ -243,6 +254,8 @@ export class CharacterRig implements RigBones {
     this.armR.position.set(w / 2 + 0.05, 0.5, 0);
     this.anchors.hipR.position.set(w / 2 + 0.04, 0.08, 0);
     this.anchors.hipL.position.set(-(w / 2 + 0.04), 0.08, 0);
+    this.anchors.belt1.position.set(-0.08, 0.1, 0.15);
+    this.anchors.belt2.position.set(0.08, 0.1, 0.15);
 
     const put: Put = (geo, color, x, y, z, parent) => {
       const m = part(geo, color, x, y, z, parent);
@@ -345,11 +358,18 @@ export class CharacterRig implements RigBones {
   }
 
   /** Build meshes for the carried weapons (index = weapon slot). */
-  setWeapons(defs: readonly (WeaponDef | null)[]): void {
-    if (defs.length === this.weaponDefs.length && defs.every((d, i) => d === this.weaponDefs[i])) return;
-    for (const g of this.weapons) g?.removeFromParent();
-    this.weaponDefs = [...defs];
-    this.weapons = defs.map((d) => (d ? buildWeaponMesh(d.look) : null));
+  setWeapons(defs: readonly (WeaponDef | null)[], offDefs: readonly (WeaponDef | null)[] = []): void {
+    const same = (a: readonly (WeaponDef | null)[], b: readonly (WeaponDef | null)[]) => a.length === b.length && a.every((d, i) => d === b[i]);
+    if (!same(defs, this.weaponDefs)) {
+      for (const g of this.weapons) g?.removeFromParent();
+      this.weaponDefs = [...defs];
+      this.weapons = defs.map((d) => (d ? buildWeaponMesh(d.look) : null));
+    }
+    if (!same(offDefs, this.offDefs)) {
+      for (const g of this.offWeapons) g?.removeFromParent();
+      this.offDefs = [...offDefs];
+      this.offWeapons = offDefs.map((d) => (d ? buildWeaponMesh(d.look) : null));
+    }
   }
 
   /**
@@ -360,25 +380,36 @@ export class CharacterRig implements RigBones {
   placeWeapons(active: number | null, inHand: boolean, pistolInHand = false): void {
     let hips = 0;
     let backs = 0;
-    this.weapons.forEach((g, i) => {
-      const d = this.weaponDefs[i];
-      if (!g || !d) return;
-      const pistol = d.look.kind === 'pistol';
-      let anchor: WeaponAnchor;
-      if (i === active && (inHand || (pistol && pistolInHand && !this.hasHolster))) anchor = 'hand';
-      else if (pistol) anchor = hips++ === 0 ? 'hipR' : 'hipL';
-      else anchor = backs++ === 0 ? 'back1' : 'back2';
+    let belts = 0;
+    const put = (g: THREE.Group, anchor: WeaponAnchor) => {
       const slot = this.anchors[anchor];
       if (g.parent !== slot) {
         slot.add(g);
         g.position.set(0, 0, 0);
         g.rotation.set(0, 0, 0);
       }
+    };
+    this.weapons.forEach((g, i) => {
+      const d = this.weaponDefs[i];
+      if (!g || !d) return;
+      const pistol = d.look.kind === 'pistol';
+      const held = i === active && (inHand || (pistol && pistolInHand && !this.hasHolster));
+      if (held) put(g, 'hand');
+      else if (pistol) put(g, hips++ === 0 ? 'hipR' : 'hipL');
+      else put(g, backs++ === 0 ? 'back1' : 'back2');
+      // Dual wielding: the second gun in the left hand, else tucked into the belt.
+      const off = this.offWeapons[i];
+      if (off) put(off, held ? 'handL' : belts++ === 0 ? 'belt1' : 'belt2');
     });
   }
 
   /** The weapon mesh in a slot (for small per-frame tweaks such as reload wobble). */
   weaponMesh(i: number): THREE.Group | null {
     return this.weapons[i] ?? null;
+  }
+
+  /** The off-hand gun mesh in a slot, if dual wielding. */
+  offWeaponMesh(i: number): THREE.Group | null {
+    return this.offWeapons[i] ?? null;
   }
 }

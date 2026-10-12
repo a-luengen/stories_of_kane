@@ -12,6 +12,8 @@ export interface EnemyArchetype {
   weapon: string;
   /** Weapon on horseback (null: never spawns mounted). */
   mountedWeapon: string | null;
+  /** Second guns for the dual wielders (EnemySpawn.dual), picked at random. */
+  offHandWeapons?: string[];
   tactics: Tactics;
   hp: number;
   /** Spread multiplier (lower = more accurate). */
@@ -40,6 +42,7 @@ export const ENEMIES: Record<ArchetypeId, EnemyArchetype> = {
     id: 'gunslinger',
     weapon: 'revolver',
     mountedWeapon: 'revolver',
+    offHandWeapons: ['revolver', 'revolver', 'derringer'],
     tactics: 'strafe',
     hp: 90,
     inaccuracy: 2.4,

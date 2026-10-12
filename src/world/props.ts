@@ -4,6 +4,7 @@ import { fadeableToon, vertexToon } from '../render/materials';
 import { PAL } from '../render/palette';
 import { Rng } from '../util/math';
 import type { CollisionWorld } from './Colliders';
+import type { LootContainer } from './Container';
 
 /** Shared map-building blocks: ground, buildings and props (with their colliders). */
 
@@ -32,6 +33,8 @@ export interface WorldData {
   /** Player horse start (null: no horse at the start). */
   horseSpawn: THREE.Vector3 | null;
   horseYaw: number;
+  /** Lootable barrels, crates, chests, ammo boxes and weapon crates. */
+  containers: LootContainer[];
 }
 
 export function shade(hex: number, f: number): number {

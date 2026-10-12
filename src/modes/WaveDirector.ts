@@ -10,6 +10,8 @@ export interface EnemySpawn {
   hp: number;
   accuracy: number;
   reaction: number;
+  /** Gunslingers only: a second gun in the left hand. */
+  dual?: boolean;
 }
 
 export interface WaveComposition {
@@ -40,6 +42,7 @@ export function waveSpec(wave: number): WaveSpec {
     hp: last.hp + k * s.hpPerWave,
     accuracy: Math.max(s.minAccuracy, last.accuracy - k * s.accuracyPerWave),
     reaction: Math.max(s.minReaction, last.reaction - k * s.reactionPerWave),
+    dual: Math.min(s.maxDual, (last.dual ?? 0) + k * s.dualPerWave),
   };
 }
 
@@ -79,6 +82,12 @@ export function composeWave(wave: number, rand = Math.random): WaveComposition {
         riders--;
       }
     }
+  }
+  // Dual-wielding gunslingers, from the configured wave.
+  if (wave >= CONFIG.wave.dualWieldFromWave && (spec.dual ?? 0) > 0) {
+    const slingers = enemies.filter((e) => e.archetype === 'gunslinger');
+    let duals = Math.round(slingers.length * spec.dual!);
+    for (const e of slingers) if (duals-- > 0) e.dual = true;
   }
   for (let i = enemies.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));

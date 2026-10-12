@@ -4,7 +4,22 @@ import type { GridContainer } from '../items/GridContainer';
 import type { IconRenderer } from '../items/IconRenderer';
 import { ammoItemFor, clothingOf, itemDef, weaponOf } from '../items/ItemDef';
 import { footprint, type ItemInstance } from '../items/ItemInstance';
-import { beginDrag, beginSplit, canDrop, cancelDrag, dropDrag, takeAll, type Drag, type DropTarget } from '../items/transfer';
+import {
+  beginDrag,
+  beginSplit,
+  canDrop,
+  cancelDrag,
+  dropDrag,
+  quickEquip,
+  quickMove,
+  quickUnequip,
+  takeAll,
+  unloadWeapon,
+  type Drag,
+  type DropTarget,
+  type Holding,
+  type QuickResult,
+} from '../items/transfer';
 import { CharacterPreview } from './CharacterPreview';
 import { inventoryLayout, PREVIEW_SIZE } from './InventoryPanel';
 import { lootLayout } from './LootPanel';
@@ -33,14 +48,23 @@ export interface ItemOwner {
   inventory: GridContainer;
 }
 
-export interface LootTarget extends ItemOwner {
+/** What the loot view opens: a corpse (grid + gun slot) or a container (grid only). */
+export interface LootTarget {
   name: string;
+  inventory: GridContainer;
+  /** Corpses: their weapon slot is lootable too. */
+  equipment?: Equipment;
   /** Called after items were taken (e.g. to update the corpse's model). */
   lootChanged(): void;
 }
 
 export interface InventoryHost {
-  player: ItemOwner & { appearance(): import('../data/types').AppearanceConfig; syncEquipment(): void };
+  player: ItemOwner & {
+    appearance(): import('../data/types').AppearanceConfig;
+    syncEquipment(): void;
+    /** Selected weapon slot (double-clicking a handgun fills its off-hand). */
+    active?: number | null;
+  };
   icons: IconRenderer;
   /** Spawn the item on the ground next to the player. */
   dropToWorld(item: ItemInstance): void;
@@ -59,6 +83,12 @@ export interface UiPointer {
   /** Right button pressed this frame. */
   secondary?: boolean;
 }
+
+/** Two clicks on the same thing within this many seconds make a double-click. */
+const DOUBLE_CLICK = 0.4;
+/** A press and release count as a click (not a drag) within this time and distance (low-res px). */
+const CLICK_TIME = 0.3;
+const CLICK_SLOP = 3;
 
 const SLOT_NAMES: Record<string, string> = {
   hat: 'HAT', top: 'TOP', legs: 'LEGS', fullBody: 'FULL BODY', outerwear: 'OUTERWEAR', neck: 'NECK', boots: 'BOOTS', belt: 'BELT', holster: 'HOLSTER',
@@ -79,6 +109,11 @@ export class InventoryUI {
   private grab = { dx: 0, dy: 0 };
   private previewDrag: { x0: number; yaw0: number } | null = null;
   private time = 0;
+  /** Where and when the pointer went down (to tell clicks from drags). */
+  private press: { x: number; y: number; t: number } | null = null;
+  private lastClick: { key: object; t: number } | null = null;
+  /** A grid flashes red when something doesn't fit into it. */
+  private flash: { grid: GridContainer; left: number } | null = null;
 
   constructor(
     private host: InventoryHost,
@@ -147,18 +182,97 @@ export class InventoryUI {
       this.walletRect = l.wallet;
       return l;
     }
-    if (this.mode?.kind === 'loot') {
-      const t = this.mode.target;
-      return lootLayout(W, H, p, t, () => {
-        const r = takeAll(t.inventory, p.inventory, [{ holder: t.equipment, key: 'w0' }]);
-        if (r.leftover) this.host.toast('Inventory full');
-        this.changed();
-      });
-    }
+    if (this.mode?.kind === 'loot') return lootLayout(W, H, p, this.mode.target, () => this.takeAll());
     return inventoryLayout(W, H, p.equipment, p.inventory);
   }
 
   private walletRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+
+  /** Loot view: everything that fits into the player's bags. */
+  private takeAll(): void {
+    if (this.mode?.kind !== 'loot') return;
+    const t = this.mode.target;
+    const p = this.host.player;
+    // Off-hand first (taking the main gun would move the off-hand gun up into its place).
+    const slots = t.equipment ? [{ holder: t.equipment, key: 'o0' as const }, { holder: t.equipment, key: 'w0' as const }] : [];
+    const r = takeAll(t.inventory, p.inventory, slots);
+    if (r.leftover) {
+      this.host.toast('Inventory full');
+      this.flash = { grid: p.inventory, left: 0.4 };
+    }
+    this.changed();
+  }
+
+  /**
+   * Unload a gun's rounds: into the grid it lies in; from your weapon slots into your bags (a
+   * corpse's gun slot into the corpse's pockets).
+   */
+  private unload(item: ItemInstance, z: Zone): void {
+    const p = this.host.player;
+    let into: GridContainer;
+    if (z.kind === 'grid') into = z.grid;
+    else if (z.kind === 'slot' && z.holder !== p.equipment && this.mode?.kind === 'loot') into = this.mode.target.inventory;
+    else into = p.inventory;
+    const r = unloadWeapon(item, into);
+    if (r.unloaded === 0 && r.left === 0) this.host.toast('Not loaded');
+    else if (r.left > 0) {
+      this.flash = { grid: into, left: 0.4 };
+      this.host.toast(r.unloaded > 0 ? `No space for ${r.left} rounds` : 'No space');
+    } else this.host.toast(`Unloaded ${r.unloaded} rounds`);
+    this.changed();
+  }
+
+  /** True when this click on `key` completes a double-click. */
+  private doubleClick(key: object): boolean {
+    const d = this.lastClick !== null && this.lastClick.key === key && this.time - this.lastClick.t < DOUBLE_CLICK;
+    this.lastClick = d ? null : { key, t: this.time };
+    return d;
+  }
+
+  /** Where an item currently sits among the visible zones. */
+  private holdingOf(item: ItemInstance): Holding | null {
+    for (const z of this.layout?.zones ?? []) {
+      if (z.kind === 'grid' && z.grid.find(item)) return { kind: 'grid', grid: z.grid };
+      if (z.kind === 'slot' && z.holder.get(z.key) === item) return { kind: 'slot', holder: z.holder, key: z.key };
+    }
+    return null;
+  }
+
+  /**
+   * Double-click on an item. Loot view: across to the other side. Inventory: equip from the
+   * grid, or unequip into it. (Shop: nothing — selling needs a deliberate drag.)
+   */
+  private quickAction(item: ItemInstance): void {
+    const h = this.holdingOf(item);
+    if (!h || !this.mode) return;
+    const p = this.host.player;
+    let r: QuickResult;
+    let into: GridContainer;
+    if (this.mode.kind === 'loot') {
+      const t = this.mode.target;
+      const mine = h.kind === 'grid' ? h.grid === p.inventory : h.holder === p.equipment;
+      into = mine ? t.inventory : p.inventory;
+      r = quickMove(item, h, into);
+    } else if (this.mode.kind === 'inventory') {
+      into = p.inventory;
+      if (h.kind === 'grid') {
+        r = quickEquip(item, p.inventory, p.equipment, p.active ?? null);
+        if (!r.ok && r.reason === 'noSlot') {
+          if (itemDef(item.defId).category === 'weapon') this.host.toast('No free weapon slot');
+          return;
+        }
+      } else {
+        r = quickUnequip(h.holder, h.key, p.inventory);
+      }
+    } else {
+      return;
+    }
+    if (!r.ok || r.partial) {
+      this.flash = { grid: into, left: 0.4 };
+      this.host.toast(r.ok ? 'No space for all of it' : 'No space');
+    }
+    this.changed();
+  }
 
   /** Buy a dragged / clicked stock item into a grid cell, a slot, or anywhere that fits. */
   private completePurchase(entry: ShopEntry, item: ItemInstance, z: Zone | undefined, x: number, y: number): void {
@@ -205,23 +319,36 @@ export class InventoryUI {
     const { x, y } = ptr;
     const overflow = this.host.player.inventory;
 
-    if (this.buying && keys.rotate) this.buying.item.rotated = !this.buying.item.rotated;
-    if (this.drag && keys.rotate) {
-      this.drag.item.rotated = !this.drag.item.rotated;
-      const f = footprint(this.drag.item);
-      this.grab = { dx: (f.w * 16) / 2, dy: (f.h * 16) / 2 };
+    if (this.flash) {
+      this.flash.left -= dt;
+      if (this.flash.left <= 0) this.flash = null;
     }
+
+    // R: rotate what's held; with nothing held, "Take all" in the loot view.
+    if (keys.rotate) {
+      if (this.buying) this.buying.item.rotated = !this.buying.item.rotated;
+      else if (this.drag) {
+        this.drag.item.rotated = !this.drag.item.rotated;
+        const f = footprint(this.drag.item);
+        this.grab = { dx: (f.w * 16) / 2, dy: (f.h * 16) / 2 };
+      } else if (this.mode.kind === 'loot') this.takeAll();
+    }
+    if (ptr.pressed) this.press = { x, y, t: this.time };
+    const click = ptr.released && this.press !== null && Math.hypot(x - this.press.x, y - this.press.y) <= CLICK_SLOP && this.time - this.press.t <= CLICK_TIME;
+    if (ptr.released) this.press = null;
+    // Shift-clicks split stacks; they're never part of a double-click.
+    const clicked = click && !keys.shift ? (this.drag?.item ?? null) : null;
 
     if (this.previewDrag) this.preview.yaw = this.previewDrag.yaw0 + (x - this.previewDrag.x0) * 0.05;
 
-    // Right-click a consumable in the grid to use it.
-    if (ptr.secondary && !this.drag) {
+    // Right-click: use a consumable, or unload a gun.
+    if (ptr.secondary && !this.drag && !this.buying) {
       const z = this.zoneAt(x, y);
-      const item = z?.kind === 'grid' ? z.grid.at(Math.floor((x - z.x) / z.cell), Math.floor((y - z.y) / z.cell))?.item : null;
-      if (item && itemDef(item.defId).heal && this.host.useItem) {
+      const item = z?.kind === 'grid' ? z.grid.at(Math.floor((x - z.x) / z.cell), Math.floor((y - z.y) / z.cell))?.item : z?.kind === 'slot' ? z.holder.get(z.key) : null;
+      if (item && itemDef(item.defId).heal && this.host.useItem && z?.kind === 'grid') {
         const why = this.host.useItem(item);
         if (why) this.host.toast(why);
-      }
+      } else if (item && weaponOf(itemDef(item.defId)) && z) this.unload(item, z);
     }
 
     if (ptr.pressed && !this.drag) {
@@ -267,9 +394,10 @@ export class InventoryUI {
         const b = this.buying;
         this.buying = null;
         const z = this.zoneAt(x, y);
-        // Click on the tile (or a drop anywhere on the merchant's side): buy into any free space.
-        if (z?.kind === 'stock' || z?.kind === 'sell') this.completePurchase(b.entry, b.item, undefined, x, y);
-        else if (z?.kind === 'grid' || (z?.kind === 'slot' && z.holder === this.host.player.equipment)) this.completePurchase(b.entry, b.item, z, x, y);
+        // Double-click on a tile buys into any free space; dragging onto a cell or slot buys it there.
+        if (z?.kind === 'stock') {
+          if (click && z.entry === b.entry && this.doubleClick(b.entry)) this.completePurchase(b.entry, b.item, undefined, x, y);
+        } else if (z?.kind === 'grid' || (z?.kind === 'slot' && z.holder === this.host.player.equipment)) this.completePurchase(b.entry, b.item, z, x, y);
       }
       // Anywhere on the merchant's side (tiles and page buttons included) sells.
       const sellZone = this.mode?.kind === 'shop' ? this.layout.zones.find((z) => z.kind === 'sell') : undefined;
@@ -301,6 +429,8 @@ export class InventoryUI {
         }
         this.changed();
       }
+      // A click puts the item straight back; the second one in a row is a double-click.
+      if (clicked && this.doubleClick(clicked)) this.quickAction(clicked);
     }
   }
 
@@ -315,11 +445,20 @@ export class InventoryUI {
     // A worn dress blocks the top slot.
     const dressWorn = !!p.equipment.clothing.legs && clothingOf(itemDef(p.equipment.clothing.legs.defId))?.slot === 'fullBody';
     let hovered: ItemInstance | null = null;
+    /** Drawn last, over the key hints. */
+    let tooltip: { text: string; color?: string }[] | null = null;
     let hoveredStock: Extract<Zone, { kind: 'stock' }> | null = null;
     if (this.mode.kind === 'shop') drawWallet(ctx, this.walletRect, this.mode.shop.economy.wallet);
     for (const z of this.layout.zones) {
       if (z.kind === 'grid') {
         drawGridZone(ctx, z, icons, null);
+        if (this.flash?.grid === z.grid) {
+          // Didn't fit: a red blink over the grid.
+          ctx.globalAlpha = Math.min(1, this.flash.left / 0.2);
+          ctx.fillStyle = UI.invalid;
+          ctx.fillRect(z.x, z.y, z.w, z.h);
+          ctx.globalAlpha = 1;
+        }
         if (!this.drag && inRect(z, ptr.x, ptr.y)) hovered = z.grid.at(Math.floor((ptr.x - z.x) / z.cell), Math.floor((ptr.y - z.y) / z.cell))?.item ?? null;
       } else if (z.kind === 'slot') {
         drawSlotZone(ctx, z, icons, null, z.key === 'top' && dressWorn && z.holder === p.equipment);
@@ -341,7 +480,7 @@ export class InventoryUI {
           drawText(ctx, t, z.x + Math.round((z.w - textWidth(t)) / 2), z.y + z.h - 9, UI.brassLight, UI.ink);
         }
       } else {
-        this.preview.sync(p.appearance(), p.equipment.weaponDefs(), p.equipment.version);
+        this.preview.sync(p.appearance(), p.equipment.weaponDefs(), p.equipment.version, p.equipment.offHandDefs());
         this.preview.render(1 / 60);
         ctx.drawImage(this.preview.canvas, z.x, z.y);
       }
@@ -381,21 +520,27 @@ export class InventoryUI {
     } else if (hovered) {
       const lines = this.tooltip(hovered);
       if (this.mode.kind === 'shop') lines.push({ text: `SELLS FOR $${this.mode.shop.economy.sellValue(hovered)}`, color: UI.brassLight });
-      drawTooltip(ctx, lines, ptr.x, ptr.y, W, H);
+      tooltip = lines;
     } else if (hoveredStock) {
       const e = hoveredStock.entry;
       const lines = this.tooltip({ uid: 0, defId: e.item, quantity: e.quantity, rotated: false });
       lines.splice(1, 0, { text: hoveredStock.locked ? `FROM WAVE ${e.unlockWave}` : `PRICE $${e.price}`, color: hoveredStock.locked ? UI.rust : UI.brassLight });
-      drawTooltip(ctx, lines, ptr.x, ptr.y, W, H);
+      tooltip = lines;
     }
 
     // Key hints under the panels.
     const last = this.layout.panels[this.layout.panels.length - 1];
     const first = this.layout.panels[0];
-    const hint = this.mode.kind === 'shop' ? 'CLICK OR DRAG TO BUY   DRAG ONTO MERCHANT TO SELL   E/ESC CLOSE' : this.mode.kind === 'loot' ? 'DRAG ACROSS   R ROTATE   SHIFT SPLIT   DRAG OUT TO DROP   E/ESC CLOSE' : 'R ROTATE   SHIFT SPLIT   DRAG OUT TO DROP   I/ESC CLOSE';
+    const hint =
+      this.mode.kind === 'shop'
+        ? 'DOUBLE-CLICK OR DRAG TO BUY   DRAG ONTO MERCHANT TO SELL   E/ESC CLOSE'
+        : this.mode.kind === 'loot'
+          ? 'DOUBLE-CLICK MOVES ACROSS   R TAKE ALL (ROTATES WHILE DRAGGING)   E/ESC CLOSE'
+          : 'DOUBLE-CLICK EQUIP   R ROTATE   SHIFT SPLIT   DRAG OUT TO DROP   I/ESC CLOSE';
     const hx = Math.round((first.x + last.x + last.w) / 2 - textWidth(hint) / 2);
     drawText(ctx, hint, hx, Math.min(H - 7, last.y + last.h + 7), UI.sand, UI.ink);
 
+    if (tooltip) drawTooltip(ctx, tooltip, ptr.x, ptr.y, W, H);
     drawCursor(ctx, ptr.x, ptr.y);
   }
 
@@ -411,6 +556,7 @@ export class InventoryUI {
       lines.push({ text: `FIRE RATE ${(1 / w.fireInterval).toFixed(1)}/S`, color: UI.sand });
       lines.push({ text: `AMMO ${ammoItemFor(w.ammoType)?.name ?? w.ammoType}`, color: UI.sand });
       lines.push({ text: `LOADED ${item.loadedRounds ?? 0}/${w.magazine}`, color: UI.sand });
+      lines.push({ text: 'RIGHT-CLICK: UNLOAD', color: UI.woodPale });
     }
     const c = clothingOf(def);
     if (c) lines.push({ text: `SLOT ${SLOT_NAMES[c.slot]}`, color: UI.sand });

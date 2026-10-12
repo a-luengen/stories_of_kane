@@ -71,6 +71,24 @@ export class CollisionWorld {
     return c;
   }
 
+  /** Take a collider out (a prop was destroyed). */
+  remove(c: Collider): void {
+    const i = this.colliders.indexOf(c);
+    if (i < 0) return;
+    this.colliders.splice(i, 1);
+    for (const list of this.grid.values()) {
+      const k = list.indexOf(c);
+      if (k >= 0) list.splice(k, 1);
+    }
+  }
+
+  /** Put a removed collider back (a prop was rebuilt). */
+  restore(c: Collider): void {
+    if (this.colliders.includes(c)) return;
+    if (c.kind === 'circle') this.insert(c, c.x - c.r, c.z - c.r, c.x + c.r, c.z + c.r);
+    else this.insert(c, c.minX, c.minZ, c.maxX, c.maxZ);
+  }
+
   private key(cx: number, cz: number): number {
     return (cx + 1000) * 4096 + (cz + 1000);
   }

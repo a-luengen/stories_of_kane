@@ -15,7 +15,7 @@ interface Row {
 const ROW_H = 9;
 const PANEL_W = 190;
 
-/** F7: reveal or reset the world map, show exit zones, jump to any place's exit. */
+/** 0: reveal or reset the world map, show exit zones, jump to any place's exit. */
 export class WorldDebug {
   private rows: Row[];
 
@@ -45,7 +45,7 @@ export class WorldDebug {
   draw(ctx: CanvasRenderingContext2D, W: number, H: number, ptr: { x: number; y: number }): void {
     dim(ctx, W, H, 0.45);
     const r = this.layout(W, H);
-    drawPanel(ctx, r, 'WORLD DEBUG  F7');
+    drawPanel(ctx, r, 'WORLD DEBUG  0');
     const over = this.hit(ptr.x, ptr.y, W, H);
     this.rows.forEach((row, i) => {
       const y = r.y + 3 + i * ROW_H;

@@ -26,7 +26,7 @@ export class Engine {
   readonly icons: IconRenderer;
   /** Sound for the whole app (starts on the first click / key press). */
   readonly audio = new AudioEngine();
-  /** F4: playing voices and where they come from. */
+  /** 9: playing voices and where they come from. */
   readonly soundDebug: SoundDebug;
   pixelate = CONFIG.render.pixelate;
   lowW = CONFIG.render.baseWidth;
@@ -102,8 +102,8 @@ export class Engine {
     if (i.consume('KeyP')) this.pixelate = !this.pixelate;
     if (i.consume('KeyO')) this.pixelPass.quantize = !this.pixelPass.quantize;
     if (i.consume('KeyL')) this.pixelPass.outlines = !this.pixelPass.outlines;
-    if (i.consume('F3')) this.debug.visible = !this.debug.visible;
-    if (i.consume('F4')) this.soundDebug.visible = !this.soundDebug.visible;
+    if (i.consume('Digit8')) this.debug.visible = !this.debug.visible;
+    if (i.consume('Digit9')) this.soundDebug.visible = !this.soundDebug.visible;
   }
 
   /** Update and return the low-res pointer for menus (consumes mouse press / release edges). */

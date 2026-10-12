@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Horse } from '../entities/Horse';
 
-/** Full-resolution debug canvas (toggle F3): horse heading/input arrows, turn radius, speed, FPS. */
+/** Full-resolution debug canvas (toggle 8): horse heading/input arrows, turn radius, speed, FPS. */
 export class DebugOverlay {
   readonly canvas = document.createElement('canvas');
   private ctx: CanvasRenderingContext2D;

@@ -382,7 +382,7 @@ describe('discovery', () => {
   });
 });
 
-describe('world debug (F7)', () => {
+describe('world debug (0)', () => {
   it('teleport: within a place you are moved to the exit; elsewhere the place loads, whatever the fight or trails', async () => {
     const { pt, sessions } = playthrough();
     await pt.start();

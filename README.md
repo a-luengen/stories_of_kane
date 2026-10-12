@@ -33,10 +33,10 @@ deploys there (`.github/workflows/deploy.yml`). One-time setup: repo Settings â†
 | Shift | Sprint on foot / gallop on horse |
 | P | Toggle pixelation (debug) |
 | O / L | Toggle palette quantization / outlines |
-| F3 | Debug overlay (horse heading, input, turn radius, speed, FPS, NPC states) |
+| 8 | Debug overlay (horse heading, input, turn radius, speed, FPS, NPC states) |
 | M | World map (sandbox; pauses like the inventory). Mute is in the pause menu's sound settings |
-| F4 | Sound debug: playing voices (bus, sample or synth, volume, distance) and rings at their sources |
-| F7 | World debug (sandbox): reveal all places and trails, reset discovery, show exit zones, teleport to any place's exit |
+| 9 | Sound debug: playing voices (bus, sample or synth, volume, distance) and rings at their sources |
+| 0 | World debug (sandbox): reveal all places and trails, reset discovery, show exit zones, teleport to any place's exit |
 
 ## Sound
 
@@ -76,7 +76,7 @@ NPCs are defined in `src/data/npcs.ts`. Adding one is a data change only: give i
 - NPCs never start hostile. Being hit by the player, or (for `defendsOthers`) seeing the player hit someone within 12 units, provokes them. Armed NPCs draw, aim briefly (a red **!** shows) and fight at their weapon's preferred range; unarmed ones run, then hide by a building.
 - Player bullets landing within 3 units make an NPC flinch and warn you, without turning hostile.
 - They calm down once you've been out of range or out of sight for 60 s. After you die and respawn, everyone calms down at once. Dead NPCs respawn at home after 45 s.
-- The debug overlay (F3) lists each NPC's state and calm timer.
+- The debug overlay (8) lists each NPC's state and calm timer.
 
 ## Items & inventory
 

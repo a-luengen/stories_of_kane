@@ -69,7 +69,7 @@ class ExitPoint implements Interactable {
 /**
  * loading: the first place is loading (black) · play · map: the world map is open (M) ·
  * leaving: fading into the map · riding: the ride along the trail while the next place loads ·
- * arriving: fading from the map (or black, at the start) into the place · debug: the F7 panel.
+ * arriving: fading from the map (or black, at the start) into the place · debug: the world debug panel (0).
  */
 type Phase = 'loading' | 'play' | 'map' | 'leaving' | 'riding' | 'arriving' | 'debug';
 
@@ -111,7 +111,7 @@ export class SandboxMode implements GameMode {
   private notice: { text: string; left: number } | null = null;
   /** The journey under way (resolves when the next place is ready). */
   private journey: { start: () => Promise<TravelResult>; hops: Hop[]; dest: PoiDef; arrived: boolean } | null = null;
-  /** F7: the world debug panel, and the exit zones drawn on the ground (in this place). */
+  /** 0: the world debug panel, and the exit zones drawn on the ground (in this place). */
   private debug: WorldDebug;
   private showZones = false;
   private zones: THREE.Group | null = null;
@@ -311,7 +311,7 @@ export class SandboxMode implements GameMode {
     if (news.length) this.session?.showToast(`Map updated: ${news.join(', ')}`, 3);
   }
 
-  // ------------------------------------------------------------------ F7 world debug
+  // ------------------------------------------------------------------ world debug (0)
 
   private toggleDebug(): void {
     if (this.phase === 'debug') this.phase = 'play';
@@ -396,9 +396,9 @@ export class SandboxMode implements GameMode {
       this.notice.left -= dt;
       if (this.notice.left <= 0) this.notice = null;
     }
-    // M: the world map (not over an inventory / shop screen). F7: world debug.
+    // M: the world map (not over an inventory / shop screen). 0: world debug.
     if (input.consume('KeyM')) this.toggleMap();
-    if (input.consume('F7')) this.toggleDebug();
+    if (input.consume('Digit0')) this.toggleDebug();
 
     switch (this.phase) {
       case 'loading':

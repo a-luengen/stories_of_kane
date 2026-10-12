@@ -262,7 +262,7 @@ export class AudioEngine {
     for (const v of this.pool.prune(this.ctx.currentTime)) setTimeout(() => v.out.disconnect(), 50);
   }
 
-  /** Playing voices (for the F4 debug view). */
+  /** Playing voices (for the sound debug view, 9). */
   get voices(): readonly Voice[] {
     return this.pool.voices;
   }

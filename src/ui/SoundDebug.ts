@@ -3,7 +3,7 @@ import type { AudioEngine } from '../audio/AudioEngine';
 
 const BUS_COLOR: Record<string, string> = { effects: '#ffb347', voices: '#7fd7ff', ambience: '#9be37a', ui: '#e0a0ff' };
 
-/** F4: the playing voices as a list, and a ring at each positioned sound in the world. */
+/** 9: the playing voices as a list, and a ring at each positioned sound in the world. */
 export class SoundDebug {
   readonly canvas = document.createElement('canvas');
   private ctx: CanvasRenderingContext2D;

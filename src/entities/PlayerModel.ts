@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { AppearanceConfig, WeaponDef } from '../data/types';
 import { footfall } from '../audio/footSurface';
-import { CharacterRig } from '../render/CharacterRig';
+import { CharacterRig, LONG_GUN_TWIST } from '../render/CharacterRig';
 import { CROUCH_LEAN, legTargets, type GaitState } from '../render/HumanGait';
 import { angleDelta, clamp, damp, dampAngle, lerp, moveToward, smoothstep } from '../util/math';
 
@@ -50,6 +50,8 @@ export class PlayerModel {
   private hipsYaw = 0;
   private upperYaw = 0;
   private fall = 0;
+  /** 0..1: shouldering a long gun (both hands on it, torso turned). */
+  private hold = 0;
 
   constructor(appearance: AppearanceConfig) {
     this.rig = new CharacterRig(appearance);
@@ -199,10 +201,18 @@ export class PlayerModel {
       armL.rotation.y = damp(armL.rotation.y, 0.55 * support, 14, dt);
       armL.rotation.z = damp(armL.rotation.z, reloading ? -0.4 : -0.08 * (1 - support), 14, dt);
     }
+    // A drawn long gun is shouldered with both hands: the torso turns left-shoulder-forward, the
+    // right hand on the grip with the stock at the shoulder, the left one under the forestock.
+    this.hold = damp(this.hold, p.longGun && !reloading && !p.dead ? clamp(p.draw * 2 - 1, 0, 1) : 0, 14, dt);
+    const twist = LONG_GUN_TWIST * this.hold;
+    if (this.hold > 0.001) {
+      upper.rotation.y += twist;
+      this.rig.holdLongGun(gun, this.hold, LONG_GUN_TWIST);
+    } else if (gun) gun.rotation.set(0, 0, gun.rotation.z);
     head.rotation.x = -p.recoil * 0.1 - lean * 0.8;
     // The head turns the rest of the way to the aim (when holstered the torso only half-follows).
     const aimRel = p.mounted ? angleDelta(p.horseYaw, p.aimYaw) : p.aimYaw;
-    head.rotation.y = damp(head.rotation.y, clamp(angleDelta(this.upperYaw, aimRel), -0.7, 0.7), 10, dt);
+    head.rotation.y = damp(head.rotation.y, clamp(angleDelta(this.upperYaw + twist, aimRel), -0.7, 0.7), 10, dt);
 
     // Death: the knees buckle first, then the body tips over backwards (about the facing's right
     // axis, pivoting at the feet); lying down, the legs relax half straight.

@@ -172,7 +172,12 @@ describe('NPCs', () => {
     const { sys, gunman } = setup();
     const opened: string[] = [];
     gunman.onLoot = (n) => opened.push(n.name);
+    const dropped: string[] = [];
+    gunman.onGunsDropped = (_n, guns) => dropped.push(...guns.map((g) => `${g.defId}:${g.loadedRounds}`));
     gunman.hit(gunman.pos, gunman.pos, { damage: 999, shooter: null });
+    // The gun fell on the ground (still loaded); the pockets are still on the corpse.
+    expect(dropped).toEqual(['revolver:6']);
+    expect(gunman.equipment.weapons[0]).toBeNull();
     expect(gunman.canInteract()).toBe(true);
     expect(gunman.label).toBe(`Loot ${gunman.name}`);
     gunman.interact();
@@ -180,7 +185,7 @@ describe('NPCs', () => {
     const bag = new GridContainer(8, 4);
     takeAll(gunman.inventory, bag, [{ holder: gunman.equipment, key: 'w0' }]);
     expect(gunman.label).toBe(`Loot ${gunman.name} (empty)`);
-    expect(bag.items.some((i) => i.defId === 'revolver' && i.loadedRounds === 6)).toBe(true);
+    expect(bag.items.some((i) => i.defId === 'ammo_revolver')).toBe(true);
     void sys;
   });
 

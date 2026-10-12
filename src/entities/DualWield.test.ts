@@ -7,6 +7,10 @@ import { GridContainer } from '../items/GridContainer';
 import { createItem } from '../items/ItemInstance';
 import { beginDrag, cancelDrag, dropDrag, quickEquip, takeAll } from '../items/transfer';
 import { composeWave } from '../modes/WaveDirector';
+import { NpcSystem } from './NpcSystem';
+import { NPCS } from '../data/npcs';
+import { NavGrid } from '../ai/NavGrid';
+import { CollisionWorld } from '../world/Colliders';
 import { Player } from './Player';
 import { GunSet, WeaponState, type Hand } from './Weapon';
 
@@ -221,5 +225,28 @@ describe('dual wielding: player and waves', () => {
       expect(d.length).toBeGreaterThan(0);
       expect(d.every((e) => e.archetype === 'gunslinger')).toBe(true);
     }
+  });
+});
+
+describe('dying NPCs drop their guns', () => {
+  it('a dual wielder drops both guns separately (still loaded); the arms are empty; respawning tidies up', () => {
+    const cw = new CollisionWorld(20);
+    const sys = new NpcSystem([{ ...NPCS[0], id: 'twin', weapon: 'revolver', offHandWeapon: 'derringer', spawn: [0, 0], routine: { kind: 'idle', at: [0, 0], facing: 0 } }], cw, new NavGrid(cw, 20), []);
+    const npc = sys.npcs[0];
+    expect(npc.weapon!.dual).toBe(true);
+    const dropped: string[] = [];
+    let respawned = 0;
+    npc.onGunsDropped = (_n, guns) => dropped.push(...guns.map((g) => `${g.defId}:${g.loadedRounds}`));
+    npc.onRespawn = () => respawned++;
+    npc.hit(npc.pos, npc.pos, { damage: 9999, shooter: null });
+    expect(dropped.sort()).toEqual(['derringer:2', 'revolver:6']);
+    expect(npc.equipment.weapons[0]).toBeNull();
+    expect(npc.equipment.offHands[0]).toBeNull();
+    expect(npc.weapon).toBeNull();
+    // Back at the spawn after the respawn time (with a fresh pair of guns).
+    const player = { pos: new THREE.Vector3(15, 0, 15), mounted: false, dead: false };
+    for (let t = 0; t < CONFIG.npc.respawnTime + 1; t += 0.1) sys.update(0.1, player, [], () => {});
+    expect(respawned).toBe(1);
+    expect(npc.weapon!.dual).toBe(true);
   });
 });

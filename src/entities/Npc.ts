@@ -70,6 +70,10 @@ export class Npc implements Target, Interactable {
   onLoot: (npc: Npc) => void = () => {};
   /** Set by the mode: open this merchant's shop (NpcDef.shop). */
   onTrade: (npc: Npc) => void = () => {};
+  /** Set by the session: the guns this NPC dropped as it died (each lands on the ground). */
+  onGunsDropped: ((npc: Npc, guns: ItemInstance[]) => void) | null = null;
+  /** Set by the session: back at the spawn point (what was left lying around goes). */
+  onRespawn: ((npc: Npc) => void) | null = null;
   /** Set by the session: murmur a line; returns how long it takes (the bubble lasts as long). */
   onSpeak: ((npc: Npc, text: string, mood: Mood) => number) | null = null;
   readonly pos = new THREE.Vector3();
@@ -369,13 +373,19 @@ export class Npc implements Target, Interactable {
     this.vel.set(0, 0);
     this.clearPath();
     this.speech = null;
-    this.drawTarget = 0;
+    this.draw = this.drawTarget = 0; // the arms go slack at once
     this.leaveLowCover(0);
     this.crouched = false; // eases out while falling
+    // The guns fall from their hands: the off-hand one first (taking the main gun would move it
+    // up into the main slot), each its own item on the ground, still loaded.
+    const guns = [this.equipment.take('o0'), this.equipment.take('w0')].filter((g): g is ItemInstance => g !== null);
+    this.lootChanged();
+    if (guns.length) this.onGunsDropped?.(this, guns);
   }
 
   /** (Re)place at the spawn point with full health. */
   spawn(): void {
+    if (this.mode === 'dead') this.onRespawn?.(this);
     const [x, z] = this.def.spawn;
     this.pos.set(x, 0, z);
     this.prevPos.copy(this.pos);

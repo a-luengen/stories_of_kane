@@ -193,10 +193,32 @@ export class Session {
     this.targets.addActor(n);
     n.onLoot = (npc) => this.openUi(() => this.ui.openLoot(npc));
     n.onSpeak = (npc, text, mood) => this.sound.speak(npc, text, mood);
+    n.onGunsDropped = (npc, guns) => this.dropNpcGuns(npc, guns);
+    n.onRespawn = (npc) => this.clearNpcDrops(npc);
     n.model.onStep = () => {
       const gait = n.crouch > 0.5 ? 'crouch' : n.vel.length() > 3.2 ? 'run' : 'walk';
       this.sound.step(n.pos, gait, this.map.floors, true);
     };
+  }
+
+  /** Guns a dead NPC dropped, still lying on the ground (they go when the corpse does). */
+  private npcDrops = new Map<Npc, WorldItem[]>();
+
+  /** A dying NPC's guns land beside the body, each on its own (a dual wielder drops two). */
+  private dropNpcGuns(npc: Npc, guns: ItemInstance[]): void {
+    const yaw = Math.random() * Math.PI * 2;
+    const items = guns.map((g, i) => {
+      const w = this.worldItems.spawn(g, npc.pos, yaw + i * 2.4, 0.7);
+      w.onPickup = (wi) => this.pickUp(wi);
+      return w;
+    });
+    this.npcDrops.set(npc, [...(this.npcDrops.get(npc) ?? []), ...items]);
+  }
+
+  /** The corpse is gone (respawn, or wave mode clearing the dead): its guns go with it. */
+  clearNpcDrops(npc: Npc): void {
+    for (const w of this.npcDrops.get(npc) ?? []) if (this.worldItems.items.includes(w)) this.worldItems.remove(w);
+    this.npcDrops.delete(npc);
   }
 
   /** Add a horse (mountable by the player whenever no one rides it). */

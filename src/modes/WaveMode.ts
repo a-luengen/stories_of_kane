@@ -277,6 +277,7 @@ export class WaveMode implements GameMode {
     const s = this.session;
     this.enemies = this.enemies.filter((e) => {
       if (e.npc.alive || e.wave > upToWave) return true;
+      s.clearNpcDrops(e.npc);
       s.npcs.remove(e.npc);
       s.targets.removeActor(e.npc);
       return false;

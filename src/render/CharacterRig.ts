@@ -157,6 +157,16 @@ const BUILDERS: Record<ClothingKind, Builder> = {
   },
 };
 
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const NEG_Y = new THREE.Vector3(0, -1, 0);
+/** Shoulder to hand. */
+const ARM_LEN = 0.52;
+/** How far ahead of the grip the support hand holds a long gun. */
+const LONG_GUN_SUPPORT = 0.22;
+/** How far the torso turns (left shoulder forward) when shouldering a long gun. */
+export const LONG_GUN_TWIST = 0.55;
+
 export type WeaponAnchor = 'hand' | 'handL' | 'hipR' | 'hipL' | 'belt1' | 'belt2' | 'back1' | 'back2';
 
 /**
@@ -407,6 +417,54 @@ export class CharacterRig implements RigBones {
   weaponMesh(i: number): THREE.Group | null {
     return this.weapons[i] ?? null;
   }
+
+  /**
+   * Two-handed long-gun hold, blended in by `k` (0..1, e.g. with the draw). Call after the arms'
+   * own pose and after `upper` is turned by `twist` (rad, left shoulder forward) on top of the aim.
+   * The gun lies level along the aim (whatever the torso's lean); the right hand holds the grip
+   * just below the shoulder line with the stock running back to the shoulder; the left arm reaches
+   * for the forestock. Arms have no elbow, so they point straight at their hold.
+   */
+  holdLongGun(gun: THREE.Object3D | null, k: number, twist: number): void {
+    if (k <= 0) return;
+    const t = this.lg;
+    // Undo the torso's pitch so "level" means level in the world.
+    t.unpitch.setFromAxisAngle(AXIS_X, -this.upper.rotation.x);
+    const aim = t.aim.set(-Math.sin(twist), 0, Math.cos(twist)).applyQuaternion(t.unpitch);
+    const down = t.down.set(0, -1, 0).applyQuaternion(t.unpitch);
+    // Right arm: forward along the aim and a little down and in, to the grip.
+    const toGrip = t.dirR.copy(aim).addScaledVector(down, 0.22).normalize();
+    const grip = t.grip.copy(this.armR.position).addScaledVector(toGrip, ARM_LEN);
+    t.qR.setFromUnitVectors(NEG_Y, toGrip);
+    // Left arm: towards the forestock, a short way ahead of the grip.
+    const fore = t.fore.copy(grip).addScaledVector(aim, LONG_GUN_SUPPORT);
+    t.qL.setFromUnitVectors(NEG_Y, t.dirL.subVectors(fore, this.armL.position).normalize());
+    this.armR.quaternion.slerp(t.qR, k);
+    this.armL.quaternion.slerp(t.qL, k);
+    if (gun) {
+      // Gun in the hand's frame = (arm)⁻¹ · (barrel along the aim, grip down).
+      t.qGun.copy(t.unpitch).multiply(t.yaw.setFromAxisAngle(AXIS_Y, -twist)).multiply(t.pitchFwd);
+      t.qGun.premultiply(t.inv.copy(this.armR.quaternion).invert());
+      gun.quaternion.slerp(t.qGun, k);
+    }
+  }
+
+  private lg = {
+    unpitch: new THREE.Quaternion(),
+    aim: new THREE.Vector3(),
+    down: new THREE.Vector3(),
+    dirR: new THREE.Vector3(),
+    dirL: new THREE.Vector3(),
+    grip: new THREE.Vector3(),
+    fore: new THREE.Vector3(),
+    qR: new THREE.Quaternion(),
+    qL: new THREE.Quaternion(),
+    qGun: new THREE.Quaternion(),
+    yaw: new THREE.Quaternion(),
+    inv: new THREE.Quaternion(),
+    /** Barrel (local −Y) pointing forward (+Z), grip hanging down. */
+    pitchFwd: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2),
+  };
 
   /** The off-hand gun mesh in a slot, if dual wielding. */
   offWeaponMesh(i: number): THREE.Group | null {

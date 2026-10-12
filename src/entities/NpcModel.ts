@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { AppearanceConfig, WeaponDef } from '../data/types';
 import { footfall } from '../audio/footSurface';
-import { CharacterRig } from '../render/CharacterRig';
+import { CharacterRig, LONG_GUN_TWIST } from '../render/CharacterRig';
 import { CROUCH_LEAN, legTargets } from '../render/HumanGait';
 import { angleDelta, clamp, damp, dampAngle, lerp, moveToward, smoothstep } from '../util/math';
 
@@ -54,6 +54,8 @@ export class NpcModel {
   private stride = 0;
   private run = 0;
   private fall = 0;
+  /** 0..1: shouldering a long gun (both hands on it, torso turned). */
+  private hold = 0;
   private crouch = 0;
   private fallAxis = new THREE.Vector3();
 
@@ -90,7 +92,7 @@ export class NpcModel {
 
     const { hips, upper, head, armL, armR } = this.rig;
     // Weapon follows the hand from the middle of the draw on.
-    this.rig.placeWeapons(0, p.draw > 0.5, true);
+    this.rig.placeWeapons(0, p.draw > 0.5 && !p.dead, true);
 
     // Yaw: legs follow movement (or the look direction when it twists too far), torso follows the look.
     let legYaw = moving ? p.moveYaw : this.hipsYaw;
@@ -107,7 +109,7 @@ export class NpcModel {
     this.upperYaw = dampAngle(this.upperYaw, want, aiming ? 18 : 6, dt);
     hips.rotation.y = this.hipsYaw;
     upper.rotation.y = this.upperYaw;
-    head.rotation.y = damp(head.rotation.y, clamp(angleDelta(this.upperYaw, p.lookYaw), -0.8, 0.8), 8, dt);
+    head.rotation.y = damp(head.rotation.y, clamp(angleDelta(this.upperYaw + LONG_GUN_TWIST * this.hold, p.lookYaw), -0.8, 0.8), 8, dt);
 
     // Gait (knees, feet flat in stance; the planted foot sets the hip height).
     const run = p.speed > 3.2;
@@ -184,9 +186,21 @@ export class NpcModel {
       r = mix(r, { x: -2.6, y: 0, z: -0.5 }, cover);
       l = mix(l, { x: -2.6, y: 0, z: 0.5 }, cover);
     }
+    if (p.dead) {
+      // Falling / lying: arms slack along the body (no aim, no flinch, nothing held).
+      r = { x: 0.05, y: 0, z: 0.1 };
+      l = { x: 0.05, y: 0, z: -0.1 };
+    }
     const s = p.draw > 0 && p.draw < 1 ? 22 : 14;
     armR.rotation.set(damp(armR.rotation.x, r.x, s, dt), damp(armR.rotation.y, r.y, s, dt), damp(armR.rotation.z, r.z, s, dt));
     armL.rotation.set(damp(armL.rotation.x, l.x, 14, dt), damp(armL.rotation.y, l.y, 14, dt), damp(armL.rotation.z, l.z, 14, dt));
+    // A drawn long gun is shouldered with both hands, the torso turned left-shoulder-forward.
+    this.hold = damp(this.hold, this.longGun && p.reload < 0 && !p.dead ? clamp(p.draw * 2 - 1, 0, 1) : 0, 14, dt);
+    const gun = this.rig.weaponMesh(0);
+    if (this.hold > 0.001) {
+      upper.rotation.y = this.upperYaw + LONG_GUN_TWIST * this.hold;
+      this.rig.holdLongGun(gun, this.hold, LONG_GUN_TWIST);
+    } else if (gun) gun.rotation.set(0, 0, gun.rotation.z);
     head.rotation.x = p.flinch * 0.3 - p.recoil * 0.08 + (p.lean ? 0.12 : 0) - lean * (p.inspect ? 0.2 : 0.8);
 
     // Death: the knees buckle first, then the body tips over backwards (about the torso's right

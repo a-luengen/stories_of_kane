@@ -46,7 +46,8 @@ export class HorseMotor {
    * @param target desired heading (radians) or null when no direction is held
    * @param gallop raise max speed from canter to gallop
    */
-  update(target: number | null, gallop: boolean, dt: number): void {
+  /** `cap`: a top speed below the usual (a horse ambling about on its own). */
+  update(target: number | null, gallop: boolean, dt: number, cap = Infinity): void {
     const t = this.tuning;
     this.target = target;
     this.angularVelocity = 0;
@@ -64,7 +65,7 @@ export class HorseMotor {
     const delta = wrapAngle(target - this.heading);
     const absDelta = Math.abs(delta);
     this.delta = delta;
-    const maxSpeed = gallop ? t.gallopSpeed : t.canterSpeed;
+    const maxSpeed = Math.min(cap, gallop ? t.gallopSpeed : t.canterSpeed);
 
     if (absDelta > t.brakeAngle && this.speed > t.pivotSpeed) {
       // Opposite input: brake hard, keep heading.

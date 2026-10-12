@@ -5,9 +5,9 @@ import type { NpcDef, NpcLines, Vec2, WeaponDef } from '../data/types';
 import { resolveWeapon } from '../data/weapons';
 import { EQUIP_SLOTS } from '../data/types';
 import { Equipment, type SlotKey } from '../items/Equipment';
-import { GridContainer } from '../items/GridContainer';
+import { GridContainer, gridFromData, gridToData } from '../items/GridContainer';
 import { ammoItemFor, itemDef, itemForWeapon, weaponOf } from '../items/ItemDef';
-import { createItem, type ItemInstance } from '../items/ItemInstance';
+import { createItem, itemFromData, itemToData, type ItemData, type ItemInstance, type PlacedItemData } from '../items/ItemInstance';
 import type { Interactable } from '../Interaction';
 import { angleDelta, damp, dirToYaw, lerp, moveToward, yawToX, yawToZ } from '../util/math';
 import { segmentVsCylinder, type CircleCollider, type CollisionWorld } from '../world/Colliders';
@@ -22,6 +22,20 @@ import { GunSet, WeaponState, type Hand, type ShotRequest } from './Weapon';
 import { muzzleOffset } from './WeaponModel';
 
 export type NpcMode = 'routine' | 'hostile' | 'flee' | 'hide' | 'dead';
+
+/** An NPC as plain data, for a place's saved state (matched by `def.id` on the way back). */
+export interface NpcState {
+  id: string;
+  alive: boolean;
+  hp: number;
+  pos: Vec2;
+  yaw: number;
+  /** Seconds until a dead NPC respawns (null: never). */
+  deadLeft: number | null;
+  inventory: PlacedItemData[];
+  weapon: ItemData | null;
+  offHand: ItemData | null;
+}
 
 /** What an NPC needs to know about the player. */
 export interface PlayerView {
@@ -76,6 +90,10 @@ export class Npc implements Target, Interactable {
   onRespawn: ((npc: Npc) => void) | null = null;
   /** Set by the session: murmur a line; returns how long it takes (the bubble lasts as long). */
   onSpeak: ((npc: Npc, text: string, mood: Mood) => number) | null = null;
+  /** Set by the mode: is a place worth giving directions to (not visited yet)? */
+  wantsHint: ((poi: string) => boolean) | null = null;
+  /** Set by the mode: directions were given (the place goes on the map). */
+  onHint: ((npc: Npc, poi: string) => void) | null = null;
   readonly pos = new THREE.Vector3();
   readonly prevPos = new THREE.Vector3();
   readonly vel = new THREE.Vector2();
@@ -228,6 +246,9 @@ export class Npc implements Target, Interactable {
     return this.mode !== 'dead';
   }
 
+  /** Shots landed nearby while holding a camp (the camp turns hostile on its next update). */
+  alarmed = false;
+
   /** Gun out (or coming out). */
   get drawn(): boolean {
     return this.drawTarget === 1;
@@ -263,7 +284,11 @@ export class Npc implements Target, Interactable {
       return;
     }
     this.talkLeft = CONFIG.npc.talkTime;
-    this.say(this.lines.greet[this.greetIdx++ % this.lines.greet.length], 'greet', CONFIG.npc.talkTime);
+    const hint = this.def.hints?.find((h) => this.wantsHint?.(h.poi));
+    if (hint) {
+      this.say(hint.line, 'greet', CONFIG.npc.talkTime);
+      this.onHint?.(this, hint.poi);
+    } else this.say(this.lines.greet[this.greetIdx++ % this.lines.greet.length], 'greet', CONFIG.npc.talkTime);
     if (this.def.shop) this.onTrade(this);
   }
 
@@ -334,6 +359,11 @@ export class Npc implements Target, Interactable {
       this.flinchCrouchLeft = Math.max(this.flinchCrouchLeft, rand(...nc.flinchTime));
     }
     if (this.mode !== 'routine') return;
+    // Outlaws holding a camp don't warn: shooting near them starts the fight.
+    if (this.def.territory && this.hostileByNature) {
+      this.alarmed = true;
+      return;
+    }
     this.flinch = 1;
     this.alertLeft = 2.5;
     this.talkLeft = 0;
@@ -383,6 +413,66 @@ export class Npc implements Target, Interactable {
     if (guns.length) this.onGunsDropped?.(this, guns);
   }
 
+  /** Is hostile and can see the player right now (a fight is on). */
+  get engaging(): boolean {
+    return this.mode === 'hostile' && this.sees;
+  }
+
+  /** Plain-data state (to leave a place and find it as it was). */
+  state(): NpcState {
+    const w = this.equipment.weapons[0];
+    const o = this.equipment.offHands[0];
+    return {
+      id: this.def.id,
+      alive: this.alive,
+      hp: this.hp,
+      pos: [this.pos.x, this.pos.z],
+      yaw: this.moveYaw,
+      deadLeft: this.alive || !Number.isFinite(this.deadLeft) ? null : this.deadLeft,
+      inventory: gridToData(this.inventory),
+      weapon: w ? itemToData(w) : null,
+      offHand: o ? itemToData(o) : null,
+    };
+  }
+
+  /**
+   * Back to a saved state. The living stand where they were, calm (time stood still while you
+   * were away, and they've forgotten the fight); the dead lie where they fell, already down.
+   */
+  restore(s: NpcState): void {
+    this.pos.set(s.pos[0], 0, s.pos[1]);
+    this.prevPos.copy(this.pos);
+    this.collider.x = this.pos.x;
+    this.collider.z = this.pos.z;
+    this.vel.set(0, 0);
+    this.clearPath();
+    gridFromData(this.inventory, s.inventory);
+    this.equipment.take('o0');
+    this.equipment.take('w0');
+    if (s.weapon) this.equipment.put('w0', itemFromData(s.weapon), null);
+    if (s.offHand) this.equipment.put('o0', itemFromData(s.offHand), null);
+    this.lootChanged();
+    this.moveYaw = this.lookYaw = s.yaw;
+    this.speech = null;
+    this.flinch = 0;
+    this.crouched = false;
+    this.crouch = 0;
+    this.leaveLowCover(0);
+    this.draw = this.drawTarget = 0;
+    if (s.alive) {
+      this.mode = 'routine';
+      this.hp = s.hp;
+      this.lastSeen = null;
+      this.calmTimer = 0;
+      this.model.face(s.yaw);
+    } else {
+      this.mode = 'dead';
+      this.hp = 0;
+      this.deadLeft = s.deadLeft ?? Infinity;
+      this.model.snapDead(s.yaw);
+    }
+  }
+
   /** (Re)place at the spawn point with full health. */
   spawn(): void {
     if (this.mode === 'dead') this.onRespawn?.(this);
@@ -405,8 +495,8 @@ export class Npc implements Target, Interactable {
     this.model.face(facing);
     this.collider.x = x;
     this.collider.z = z;
-    if (this.hostileByNature && this.weaponDef) {
-      // Outlaws come in with guns drawn.
+    if (this.hostileByNature && this.weaponDef && !this.def.territory) {
+      // Outlaws come in with guns drawn (those holding a camp wait for you to show up).
       this.mode = 'hostile';
       this.drawTarget = 1;
       this.telegraphLeft = this.weaponDef.ai.telegraph;
@@ -539,6 +629,12 @@ export class Npc implements Target, Interactable {
   private routine(dt: number, ctx: NpcContext, dist: number): void {
     const p = ctx.player;
     const r = this.def.routine;
+    // Holding a camp: someone walks up, in sight — fight.
+    const t = this.def.territory;
+    if (t && this.hostileByNature && !p.dead && Math.hypot(p.pos.x - t.at[0], p.pos.z - t.at[1]) < t.radius && this.lineOfSight(ctx, playerChest(p, this.chest))) {
+      this.provoke(ctx);
+      return;
+    }
     const noticing = !p.dead && dist < CONFIG.npc.noticeRange;
     const towardPlayer = dirToYaw(p.pos.x - this.pos.x, p.pos.z - this.pos.z);
     this.talkLeft -= dt;

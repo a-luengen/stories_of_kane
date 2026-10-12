@@ -5,6 +5,7 @@ import { PAL } from '../render/palette';
 import { Rng } from '../util/math';
 import type { CollisionWorld } from './Colliders';
 import type { LootContainer } from './Container';
+import type { ExitDef } from '../data/world';
 
 /** Shared map-building blocks: ground, buildings and props (with their colliders). */
 
@@ -48,6 +49,16 @@ export interface WorldData {
   containers: LootContainer[];
   /** Wooden floors (footsteps); everywhere else is dirt. */
   floors: Floor[];
+  /** Trail signs at the map's exits (where their labels float). */
+  exitSigns: ExitSign[];
+  /** Animated scenery (a windmill's sails), called every rendered frame. */
+  update?: (dt: number) => void;
+}
+
+/** A trail sign at an exit zone. */
+export interface ExitSign {
+  exit: string;
+  pos: THREE.Vector3;
 }
 
 export function shade(hex: number, f: number): number {
@@ -327,12 +338,20 @@ export function shrub(batch: StaticBatch, x: number, z: number, rng: Rng): void 
 }
 
 /** Sandstone mesas framing the playable area (visual only; bounds are enforced separately). */
-export function mesas(batch: StaticBatch, rng: Rng, HALF: number): void {
+/** Mesas around the map's edge, leaving gaps where trails lead out (`exits`). */
+export function mesas(batch: StaticBatch, rng: Rng, HALF: number, exits: readonly ExitDef[] = []): void {
   const ring: [number, number][] = [];
   for (let t = -HALF - 6; t <= HALF + 6; t += 5) {
     ring.push([t, -HALF - 5], [t, HALF + 5], [-HALF - 5, t], [HALF + 5, t]);
   }
+  // Where each trail meets the ring.
+  const gaps = exits.map((e) => {
+    const [dx, dz] = exitDirection(e);
+    const t = Math.min(Math.abs(dx) > 1e-6 ? (HALF + 5 - Math.sign(dx) * e.arrive[0]) / Math.abs(dx) : Infinity, Math.abs(dz) > 1e-6 ? (HALF + 5 - Math.sign(dz) * e.arrive[1]) / Math.abs(dz) : Infinity);
+    return [e.arrive[0] + dx * t, e.arrive[1] + dz * t];
+  });
   for (const [x, z] of ring) {
+    const open = gaps.some(([gx, gz]) => Math.hypot(gx - x, gz - z) < 8);
     const jx = x + rng.range(-2, 2);
     const jz = z + rng.range(-2, 2);
     const w = rng.range(4, 7);
@@ -344,7 +363,8 @@ export function mesas(batch: StaticBatch, rng: Rng, HALF: number): void {
     while (y < h) {
       const lh = rng.range(0.6, 1.4);
       const shrink = 1 - (y / h) * 0.25;
-      batch.box(w * shrink, lh, d * shrink, bands[layer % bands.length], jx, y, jz, rng.range(-0.1, 0.1));
+      const tilt = rng.range(-0.1, 0.1); // (drawn either way, so the map's random sequence stays the same)
+      if (!open) batch.box(w * shrink, lh, d * shrink, bands[layer % bands.length], jx, y, jz, tilt);
       y += lh;
       layer++;
     }
@@ -498,4 +518,64 @@ export function cliff(batch: StaticBatch, cw: CollisionWorld, x0: number, z0: nu
   }
   const half = 1.2;
   cw.addBox(Math.min(x0, x1) - (along ? 0 : half), Math.min(z0, z1) - (along ? half : 0), Math.max(x0, x1) + (along ? 0 : half), Math.max(z0, z1) + (along ? half : 0), height, 'rock');
+}
+
+// ------------------------------------------------------------------------------------------------
+
+/** Unit direction from an exit's arrival spot out through its zone (towards the map edge). */
+export function exitDirection(e: ExitDef): [number, number] {
+  const dx = e.at[0] - e.arrive[0];
+  const dz = e.at[1] - e.arrive[1];
+  const l = Math.hypot(dx, dz) || 1;
+  return [dx / l, dz / l];
+}
+
+/** Points along each exit's trail, so map builders can keep scenery off it. */
+export function exitCorridors(exits: readonly ExitDef[], half: number): { x: number; z: number; r: number }[] {
+  const out: { x: number; z: number; r: number }[] = [];
+  for (const e of exits) {
+    const [dx, dz] = exitDirection(e);
+    for (let t = -6; t < half * 2; t += 2) {
+      const x = e.arrive[0] + dx * t;
+      const z = e.arrive[1] + dz * t;
+      if (Math.abs(x) > half + 2 || Math.abs(z) > half + 2) break;
+      out.push({ x, z, r: 3 });
+    }
+  }
+  return out;
+}
+
+/**
+ * The way out at each exit: a worn trail from the arrival spot to the map edge, a few stones
+ * marking the zone, and a signpost beside it (its label is drawn by the HUD).
+ */
+export function trailExits(batch: StaticBatch, cw: CollisionWorld, exits: readonly ExitDef[], half: number, rng: Rng): ExitSign[] {
+  const signs: ExitSign[] = [];
+  for (const e of exits) {
+    const [dx, dz] = exitDirection(e);
+    const yaw = Math.atan2(dx, dz);
+    // Worn trail: overlapping flat patches of packed, darker dirt with two wheel ruts.
+    for (let t = -5; ; t += 1.4) {
+      const x = e.arrive[0] + dx * t;
+      const z = e.arrive[1] + dz * t;
+      if (Math.abs(x) > half + 4 || Math.abs(z) > half + 4) break;
+      batch.box(2.4 + rng.range(-0.3, 0.3), 0.012, 1.6, 0xa07a4c, x + rng.range(-0.15, 0.15), 0.004, z + rng.range(-0.15, 0.15), yaw + rng.range(-0.1, 0.1));
+      for (const s of [-0.55, 0.55]) batch.box(0.22, 0.016, 1.5, 0x8e6c46, x + dz * s, 0.006, z - dx * s, yaw);
+    }
+    // Stones at the zone's corners.
+    const [hx, hz] = e.half;
+    for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      batch.box(0.26, 0.12, 0.22, PAL.rockDark, e.at[0] + sx * hx, 0, e.at[1] + sz * hz, rng.range(0, 3));
+    }
+    // Signpost beside the zone, the board's arrow pointing out along the trail.
+    const side = Math.abs(dx) > Math.abs(dz) ? hz : hx;
+    const px = e.at[0] - dx * 1.2 + dz * (side + 0.9);
+    const pz = e.at[1] - dz * 1.2 - dx * (side + 0.9);
+    batch.box(0.14, 1.7, 0.14, PAL.wood, px, 0, pz);
+    batch.box(1.0, 0.3, 0.07, PAL.woodPale, px + dx * 0.35, 1.3, pz + dz * 0.35, yaw - Math.PI / 2); // long side along the trail
+    batch.box(0.22, 0.22, 0.07, PAL.woodPale, px + dx * 0.88, 1.34, pz + dz * 0.88, yaw + Math.PI / 4); // arrow tip
+    cw.addCircle(px, pz, 0.16, 1.7, 'wood');
+    signs.push({ exit: e.id, pos: new THREE.Vector3(px, 1.75, pz) });
+  }
+  return signs;
 }

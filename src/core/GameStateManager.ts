@@ -115,7 +115,7 @@ export class GameStateManager implements ModeHost {
         break;
       case 'Playing':
         // Esc closes an open inventory / loot / shop screen first; otherwise it pauses.
-        if (input.consume('Escape') && !this.mode!.session.escape()) {
+        if (input.consume('Escape') && !this.mode!.escape?.() && !this.mode!.session?.escape()) {
           this.pause();
           this.mode!.render(dt);
           this.pauseMenu.frame();
@@ -133,7 +133,7 @@ export class GameStateManager implements ModeHost {
         break;
     }
     // World sounds hold while paused or while an inventory / shop screen is open (UI keeps playing).
-    this.engine.audio.setWorldPaused(this.state === 'Paused' || this.state === 'GameOver' || (this.state === 'Playing' && !!this.mode?.session.ui.open));
+    this.engine.audio.setWorldPaused(this.state === 'Paused' || this.state === 'GameOver' || (this.state === 'Playing' && (!!this.mode?.session?.ui.open || !!this.mode?.paused)));
     if (this.pending) {
       const p = this.pending;
       this.pending = null;

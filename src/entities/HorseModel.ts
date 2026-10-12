@@ -11,6 +11,8 @@ export interface HorsePose {
   braking: boolean;
   pivoting: boolean;
   ridden: boolean;
+  /** 0..1: head down to the grass. */
+  graze?: number;
 }
 
 const HIP_Y = 1.02;
@@ -62,6 +64,9 @@ export class HorseModel {
   readonly root = new THREE.Group();
   /** Rider's model root attaches here (feet level of a seated rider). */
   readonly saddle = new THREE.Group();
+  /** Saddle and blanket (hidden on an unsaddled horse). */
+  private tack = new THREE.Group();
+  private grazeLevel = 0;
   private pitchPivot = new THREE.Group();
   private body = new THREE.Group();
   private neck = new THREE.Group();
@@ -124,11 +129,13 @@ export class HorseModel {
     b.add(this.tail.root);
 
     // Saddle, blanket.
-    part(boxGeo(0.72, 0.06, 0.8), PAL.red, 0, 1.71, -0.05, b);
-    part(boxGeo(0.74, 0.05, 0.82), PAL.cream, 0, 1.69, -0.05, b);
-    part(boxGeo(0.5, 0.14, 0.62), PAL.brown, 0, 1.78, -0.08, b);
-    part(boxGeo(0.12, 0.14, 0.12), PAL.darkBrown, 0, 1.9, 0.18, b); // horn
-    part(boxGeo(0.46, 0.12, 0.08), PAL.darkBrown, 0, 1.88, -0.36, b); // cantle
+    b.add(this.tack);
+    const t = this.tack;
+    part(boxGeo(0.72, 0.06, 0.8), PAL.red, 0, 1.71, -0.05, t);
+    part(boxGeo(0.74, 0.05, 0.82), PAL.cream, 0, 1.69, -0.05, t);
+    part(boxGeo(0.5, 0.14, 0.62), PAL.brown, 0, 1.78, -0.08, t);
+    part(boxGeo(0.12, 0.14, 0.12), PAL.darkBrown, 0, 1.9, 0.18, t); // horn
+    part(boxGeo(0.46, 0.12, 0.08), PAL.darkBrown, 0, 1.88, -0.36, t); // cantle
     this.saddle.position.set(0, 1.84 - 0.88, -0.08);
     b.add(this.saddle);
 
@@ -153,6 +160,11 @@ export class HorseModel {
       part(taper(0.07, 0.09, 0.09, 1), PAL.ink, 0, -0.45, 0.01, knee); // hoof
       this.legs.push({ hip, knee, front });
     }
+  }
+
+  /** Show or hide the saddle and blanket. */
+  setTack(on: boolean): void {
+    this.tack.visible = on;
   }
 
   animate(dt: number, p: HorsePose): void {
@@ -216,9 +228,12 @@ export class HorseModel {
     // forelegs: thrown back while the front feet reach forward, stretched out as they sweep back.
     const frontReach = moving ? Math.sin((this.phase + GALLOP_FRONT_OFFSET) * Math.PI * 2) * gallopMix : 0;
     const nod = moving ? Math.sin(this.phase * Math.PI * 4) * 0.06 * (1 - gallopMix) : Math.sin(this.time * 0.7) * 0.05;
-    this.neck.rotation.x = lerp(0.05, 0.35, s) * (1 - this.rear) - this.rear * 0.35 + nod - frontReach * 0.22;
+    // Grazing: neck down to the grass, muzzle in it, a slow chew.
+    this.grazeLevel = damp(this.grazeLevel, p.graze ?? 0, 2.2, dt);
+    const g = this.grazeLevel;
+    this.neck.rotation.x = lerp(0.05, 0.35, s) * (1 - this.rear) - this.rear * 0.35 + nod - frontReach * 0.22 + g * 1.2;
     this.neck.position.z = 0.92 - frontReach * 0.05;
-    this.head.rotation.x = frontReach * 0.08;
+    this.head.rotation.x = frontReach * 0.08 + g * (0.45 + Math.sin(this.time * 3) * 0.06);
     const accel = dt > 0 ? (p.speed - this.prevSpeed) / dt : 0;
     this.prevSpeed = p.speed;
     this.tail.update(dt, { speed01: s, accel, turnRate: p.angularVelocity, pivoting: p.pivoting, braking: p.braking, gaitPhase: this.phase });

@@ -14,6 +14,8 @@ export interface Interactable {
   /** Height above `position` to show the prompt at. */
   readonly promptHeight: number;
   canInteract(): boolean;
+  /** Usable while riding (default: no — on horseback E dismounts). */
+  readonly fromSaddle?: boolean;
   interact(): void;
 }
 

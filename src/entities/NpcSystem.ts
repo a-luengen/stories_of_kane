@@ -62,6 +62,15 @@ export class NpcSystem {
     this.colliders.push(...extra, ...this.bodies);
     const ctx: NpcContext = { world: this.world, nav: this.nav, player, colliders: this.colliders, hideSpots: this.hideSpots, fire };
     for (const n of this.npcs) n.step(dt, ctx);
+    // A camp fights together: once one of those holding it turns hostile (or is alarmed by shots),
+    // the rest of the camp does too.
+    for (const n of this.npcs) {
+      const t = n.def.territory;
+      if (!t || !n.alive || n.mode !== 'routine') continue;
+      const mates = this.npcs.filter((m) => m !== n && m.alive && m.def.territory?.at[0] === t.at[0] && m.def.territory?.at[1] === t.at[1]);
+      if (n.alarmed || mates.some((m) => m.mode === 'hostile' || m.alarmed)) n.provoke(ctx);
+    }
+    for (const n of this.npcs) n.alarmed = false;
   }
 
   /**

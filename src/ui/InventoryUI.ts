@@ -70,8 +70,8 @@ export interface InventoryHost {
   /** Spawn the item on the ground next to the player. */
   dropToWorld(item: ItemInstance): void;
   toast(text: string): void;
-  /** Right-click: use a consumable. Returns why not, or null. */
-  useItem?(item: ItemInstance): string | null;
+  /** Right-click: use a consumable or study a map scrap (lying in `from`). Returns why not, or null. */
+  useItem?(item: ItemInstance, from: GridContainer): string | null;
 }
 
 export interface UiPointer {
@@ -356,14 +356,15 @@ export class InventoryUI {
 
     if (this.previewDrag) this.preview.yaw = this.previewDrag.yaw0 + (x - this.previewDrag.x0) * 0.05;
 
-    // Right-click: use a consumable, or unload a gun.
+    // Right-click: use a consumable, study a map, or unload a gun.
     if (ptr.secondary && !this.drag && !this.buying) {
       const z = this.zoneAt(x, y);
       const item = z?.kind === 'grid' ? z.grid.at(Math.floor((x - z.x) / z.cell), Math.floor((y - z.y) / z.cell))?.item : z?.kind === 'slot' ? z.holder.get(z.key) : null;
-      if (item && itemDef(item.defId).heal && this.host.useItem && z?.kind === 'grid') {
-        const why = this.host.useItem(item);
+      const def = item ? itemDef(item.defId) : null;
+      if (item && (def?.heal || def?.reveals) && this.host.useItem && z?.kind === 'grid') {
+        const why = this.host.useItem(item, z.grid);
         if (why) this.host.toast(why);
-        uiSound(why ? 'inv.noSpace' : 'inv.cloth');
+        uiSound(why ? 'inv.noSpace' : def?.reveals ? 'inv.lift' : 'inv.cloth');
       } else if (item && weaponOf(itemDef(item.defId)) && z) this.unload(item, z);
     }
 

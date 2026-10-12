@@ -104,7 +104,6 @@ export class Engine {
     if (i.consume('KeyL')) this.pixelPass.outlines = !this.pixelPass.outlines;
     if (i.consume('F3')) this.debug.visible = !this.debug.visible;
     if (i.consume('F4')) this.soundDebug.visible = !this.soundDebug.visible;
-    if (i.consume('KeyM')) this.audio.play(this.audio.toggleMute() ? 'ui.mute' : 'ui.unmute');
   }
 
   /** Update and return the low-res pointer for menus (consumes mouse press / release edges). */

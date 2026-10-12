@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { CONFIG } from '../config';
 import type { LootTableId } from '../data/lootTables';
 import type { Interactable } from '../Interaction';
-import { GridContainer } from '../items/GridContainer';
-import type { ItemInstance } from '../items/ItemInstance';
+import { GridContainer, gridFromData, gridToData } from '../items/GridContainer';
+import { createItem, type ItemInstance, type PlacedItemData } from '../items/ItemInstance';
 import { fillWithLoot } from '../items/loot';
 import { vertexToon } from '../render/materials';
 import { PAL } from '../render/palette';
@@ -12,6 +12,17 @@ import { lerp, moveToward, Rng, smoothstep } from '../util/math';
 import type { Collider, CollisionWorld } from './Colliders';
 
 export type ContainerKind = 'barrel' | 'crate' | 'chest' | 'ammoBox' | 'weaponCrate';
+
+/** A container as plain data (contents, lid, wear), for a place's saved state. */
+export interface ContainerState {
+  generated: boolean;
+  opened: boolean;
+  destroyed: boolean;
+  hp: number;
+  seed: number;
+  wave: number | null;
+  items: PlacedItemData[];
+}
 
 export interface ContainerType {
   name: string;
@@ -61,6 +72,8 @@ export class LootContainer implements Interactable {
   wave = Infinity;
   /** Loot has been rolled (on first open). */
   generated = false;
+  /** Item ids always found inside (a map scrap), placed before the rolled loot. */
+  extras: string[] = [];
   /** Lid open (stays open once opened, until a restock closes it). */
   opened = false;
   private seed: number;
@@ -161,6 +174,12 @@ export class LootContainer implements Interactable {
       items = shuffled.slice(0, keep);
     }
     for (const p of [...this.inventory.placements]) this.inventory.remove(p.item);
+    this.breakApart();
+    return items;
+  }
+
+  /** Wrecked: debris instead of the box, no collider. */
+  private breakApart(): void {
     this.destroyed = true;
     this.hp = 0;
     this.opened = false;
@@ -168,7 +187,33 @@ export class LootContainer implements Interactable {
     this.debris.visible = true;
     if (this.collider && this.world) this.world.remove(this.collider);
     this.onCollisionChanged(this);
-    return items;
+  }
+
+  /** Plain-data state (to leave a place and find it as it was). */
+  state(): ContainerState {
+    return {
+      generated: this.generated,
+      opened: this.opened,
+      destroyed: this.destroyed,
+      hp: this.hp,
+      seed: this.seed,
+      wave: Number.isFinite(this.wave) ? this.wave : null,
+      items: gridToData(this.inventory),
+    };
+  }
+
+  /** Back to a saved state: contents, lid (already open, no animation), broken or not. */
+  restore(s: ContainerState): void {
+    this.seed = s.seed;
+    this.wave = s.wave ?? Infinity;
+    this.generated = s.generated;
+    gridFromData(this.inventory, s.items);
+    if (s.destroyed) this.breakApart();
+    else {
+      this.hp = s.hp;
+      this.opened = s.opened;
+      this.open01 = s.opened ? 1 : 0;
+    }
   }
 
   /** Put a broken box back together (wave mode restock). */
@@ -205,6 +250,7 @@ export class LootContainer implements Interactable {
     if (this.generated) return;
     this.generated = true;
     const t = CONTAINER_TYPES[this.kind];
+    for (const id of this.extras) this.inventory.placeAnywhere(createItem(id));
     const rng = new Rng(this.seed);
     fillWithLoot(this.inventory, t.table, rng.int(t.count[0], t.count[1] + 1), rng, this.wave);
   }

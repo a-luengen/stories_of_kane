@@ -115,6 +115,7 @@ export const NPCS: NpcDef[] = [
     // Leaning on the right porch post of the red store on the north row.
     routine: { kind: 'lean', at: [15.55, -4.25], facing: 0 },
     lines: { greet: ['Looking for iron?', 'Finest guns this side of the Pecos.'] },
+    hints: [{ poi: 'two-spurs-ranch', line: 'Need a horse? Abel Spurr breaks them at Two Spurs Ranch, up the north trail.' }],
   },
   {
     id: 'tailor',

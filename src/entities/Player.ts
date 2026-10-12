@@ -166,6 +166,13 @@ export class Player implements Target {
     this.prevPos.copy(p);
   }
 
+  /** Face a direction at once (arriving somewhere). */
+  face(yaw: number): void {
+    this.moveYaw = this.aimYaw = yaw;
+    this.vel.set(0, 0);
+    this.model.face(yaw);
+  }
+
   /** Movement on foot. When mounted the Game moves the player with the horse. */
   updateMovement(dt: number, input: PlayerInput, world: CollisionWorld, dynamic: readonly CircleCollider[]): void {
     this.prevPos.copy(this.pos);

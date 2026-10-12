@@ -16,7 +16,8 @@ export interface RunStats {
 /** A way to play: owns a game session and its rules. */
 export interface GameMode {
   readonly kind: ModeKind;
-  readonly session: Session;
+  /** The running map (null while one is loading). */
+  readonly session: Session | null;
   /** Build the map, entities and rules. */
   init(): void;
   /** One frame of play (simulation + rendering). */
@@ -25,6 +26,10 @@ export interface GameMode {
   render(dt: number): void;
   /** Free everything (scene graph, GPU resources). */
   dispose(): void;
+  /** A full-screen view of the mode's own is up (e.g. the world map): world sounds hold. */
+  readonly paused?: boolean;
+  /** Esc: close the mode's own view first (true if it did). */
+  escape?(): boolean;
   /** The player went down; the mode decides: respawn, revive or game over. */
   onPlayerDeath(): void;
 }

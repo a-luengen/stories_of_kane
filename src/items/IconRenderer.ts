@@ -46,7 +46,8 @@ export class IconRenderer {
     this.scene.add(obj);
 
     // Look from front-above-right (nearly side-on for weapons) and fit the ortho frustum to the item.
-    const dir = def.category === 'weapon' ? new THREE.Vector3(0.1, 0.35, 1) : new THREE.Vector3(0.45, 0.55, 1);
+    // Map scraps lie flat: look down on them.
+    const dir = def.category === 'weapon' ? new THREE.Vector3(0.1, 0.35, 1) : def.reveals ? new THREE.Vector3(0.15, 1.6, 0.6) : new THREE.Vector3(0.45, 0.55, 1);
     if (def.icon?.yaw) dir.applyAxisAngle(THREE.Object3D.DEFAULT_UP, def.icon.yaw);
     obj.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(obj);

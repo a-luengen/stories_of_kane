@@ -18,9 +18,12 @@ import {
   trough,
   waterTower,
   well,
+  exitCorridors,
+  trailExits,
   type Occluder,
   type WorldData,
 } from '../props';
+import type { ExitDef } from '../../data/world';
 
 const HALF = CONFIG.world.size / 2;
 
@@ -30,7 +33,7 @@ const HALF = CONFIG.world.size / 2;
  * Layout respects the isometric camera (looking towards -X/-Z): building fronts face +Z or +X so
  * they face the viewer, and the camera side of the main street only has low props.
  */
-export function buildSandboxMap(targets: TargetSystem): WorldData {
+export function buildSandboxMap(targets: TargetSystem, exits: readonly ExitDef[] = []): WorldData {
   const rng = new Rng(CONFIG.world.seed);
   const group = new THREE.Group();
   const batch = new StaticBatch();
@@ -97,7 +100,11 @@ export function buildSandboxMap(targets: TargetSystem): WorldData {
     ['ammoBox', 5.3, 6.6, 0],
     ['ammoBox', 28.4, 3.2, Math.PI / 2],
   ];
-  for (const [kind, x, z, yaw] of extra) containers.add(cw, kind, x, z, yaw);
+  for (const [kind, x, z, yaw] of extra) {
+    const c = containers.add(cw, kind, x, z, yaw);
+    // The chest on the porch across the street holds a scrap of a map to the gulch.
+    if (kind === 'chest' && x === -3.2) c.extras.push('map_scrap_gulch');
+  }
   for (const c of containers.items) group.add(c.object);
   // Fence lines on the camera side of the street.
   fence(batch, cw, -14, 9, -6, 9);
@@ -122,6 +129,11 @@ export function buildSandboxMap(targets: TargetSystem): WorldData {
   ];
   corral.forEach((p, i) => i % 3 === 0 && targets.addBottle(p, rng.pick([PAL.glass, PAL.glassBrown])));
 
+  // ---------------------------------------------------------------- exits
+  // Trails out of town (kept clear of scenery), each with a signpost.
+  for (const c of exitCorridors(exits, HALF)) reserve(c.x, c.z, c.r);
+  const exitSigns = trailExits(batch, cw, exits, HALF, new Rng(CONFIG.world.seed + 7));
+
   // ---------------------------------------------------------------- scattered desert props
   const blocked = (x: number, z: number) =>
     (x > -29 && x < 27 && z > -25 && z < 12) ||
@@ -144,7 +156,7 @@ export function buildSandboxMap(targets: TargetSystem): WorldData {
   scatter(40, 0.8, (x, z) => shrub(batch, x, z, rng));
   for (const [x, z] of [[-24, 14], [25, 13], [26, -16], [-27, -18]] as const) cactus(batch, cw, x, z, rng);
 
-  mesas(batch, rng, HALF);
+  mesas(batch, rng, HALF, exits);
 
   group.add(batch.build());
 
@@ -159,6 +171,7 @@ export function buildSandboxMap(targets: TargetSystem): WorldData {
     horseYaw: Math.PI / 2,
     containers: containers.items,
     floors: occluders.flatMap((o) => (o.floor ? [o.floor] : [])),
+    exitSigns,
   };
 }
 

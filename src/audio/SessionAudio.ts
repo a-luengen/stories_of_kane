@@ -69,6 +69,7 @@ export class SessionAudio {
   private seen = new WeakMap<object, { reloading: boolean; drawn: boolean; reload: Voice[] }>();
   private voices = new WeakMap<object, VoiceProfile>();
   private tmp = new THREE.Vector3();
+  private spatialFn = (pos: Vec3Like, def: SoundDef): Spatial => this.spatial(pos, def);
   /** Who is murmuring right now (a new line cuts the old one off). */
   private talking = new WeakMap<object, Voice>();
   /** Seconds until each standing horse snorts (or whinnies). */
@@ -79,11 +80,12 @@ export class SessionAudio {
     /** The camera's right axis (world): pan is screen-space left / right of the listener. */
     private right: THREE.Vector3,
   ) {
-    audio.spatializer = (pos, def) => this.spatial(pos, def);
+    audio.spatializer = this.spatialFn;
   }
 
   dispose(): void {
-    this.audio.spatializer = null;
+    // Only if it's still ours (the next map's session may already have taken over).
+    if (this.audio.spatializer === this.spatialFn) this.audio.spatializer = null;
   }
 
   /** A container opens (its own lid sound: creak, scrape, latch). */

@@ -12,15 +12,19 @@ import { ProjectileSystem, type Impact } from '../entities/Projectiles';
 import { TargetSystem } from '../entities/Targets';
 import type { ShotRequest } from '../entities/Weapon';
 import { pickInteractable, type Interactable } from '../Interaction';
+import type { GridContainer } from '../items/GridContainer';
+import { itemDef } from '../items/ItemDef';
 import type { ItemInstance } from '../items/ItemInstance';
 import { pickup } from '../items/transfer';
-import type { WorldLabel } from '../ui/Hud';
+import { drawToast, type WorldLabel } from '../ui/Hud';
 import { InventoryUI } from '../ui/InventoryUI';
 import { damp, dirToYaw } from '../util/math';
 import { segmentVsBox, type CircleCollider, type CollisionWorld, type Surface } from '../world/Colliders';
 import type { Occluder, WorldData } from '../world/props';
+import type { HorseState, PoiRuntime } from '../world/poiState';
 import { WorldItemSystem, type WorldItem } from '../world/WorldItem';
 import { CoverDebug } from '../render/CoverDebug';
+import { grazingDriver } from '../ai/GrazingAI';
 import { SessionAudio } from '../audio/SessionAudio';
 import { disposeObject } from './dispose';
 import type { Engine } from './Engine';
@@ -34,8 +38,16 @@ const IMPACT_BURSTS: Record<Surface, BurstKind[]> = {
 };
 
 export interface SessionOptions {
-  /** Builds the map (fills the target system with shootables). */
-  map: (targets: TargetSystem) => WorldData;
+  /** Builds the map (fills the target system with shootables) — or pass a prebuilt `world`. */
+  map?: (targets: TargetSystem) => WorldData;
+  /** A map built ahead of time (with `targets`, the target system it filled, and its `nav`). */
+  world?: WorldData;
+  targets?: TargetSystem;
+  nav?: NavGrid;
+  /** The player to use (a playthrough carries one across maps); default: a new one. */
+  player?: Player;
+  /** Put a horse at the map's horse spawn (default true; a playthrough brings its own). */
+  spawnHorse?: boolean;
   npcs: readonly NpcDef[];
   /** Passive health regeneration. */
   regen: boolean;
@@ -57,16 +69,18 @@ export interface SessionHooks {
   labels?(project: (x: number, y: number, z: number) => { x: number; y: number }): WorldLabel[];
   /** Mode HUD, drawn over the standard HUD (and under open panels). */
   drawHud?(ctx: CanvasRenderingContext2D, W: number, H: number, dt: number): void;
+  /** A map scrap was studied: put the place on the world map (no hook: scraps can't be read here). */
+  study?(poi: string): void;
 }
 
 /**
  * One playthrough of a map: scene, player, horses, NPCs, bullets, items and the inventory UI.
  * Owns its scene graph and disposes it completely; borrows the engine's renderer and input.
  */
-export class Session {
+export class Session implements PoiRuntime {
   readonly scene = new THREE.Scene();
   readonly world: CollisionWorld;
-  readonly player = new Player();
+  readonly player: Player;
   readonly horses: Horse[] = [];
   /** The horse the player is riding. */
   riding: Horse | null = null;
@@ -75,7 +89,7 @@ export class Session {
   readonly flash = new MuzzleFlash();
   /** Separate flash for NPC shots so they don't steal the player's. */
   readonly npcFlash = new MuzzleFlash();
-  readonly targets = new TargetSystem();
+  readonly targets: TargetSystem;
   readonly nav: NavGrid;
   readonly npcs: NpcSystem;
   readonly ui: InventoryUI;
@@ -129,7 +143,9 @@ export class Session {
     this.scene.add(this.sun, this.sun.target);
 
     // World + entities.
-    const wd = opts.map(this.targets);
+    this.player = opts.player ?? new Player();
+    this.targets = opts.targets ?? new TargetSystem();
+    const wd = opts.world ?? opts.map!(this.targets);
     this.map = wd;
     this.world = wd.collision;
     this.occluders = wd.occluders;
@@ -141,10 +157,10 @@ export class Session {
     this.playerCollider = { kind: 'circle', x: 0, z: 0, r: CONFIG.player.radius, coverHeight: 1.9, surface: 'wood', blocksBullets: false };
     this.targets.addActor(this.player);
     this.scene.add(this.player.model.root);
-    if (wd.horseSpawn) this.addHorse(new Horse(), wd.horseSpawn, wd.horseYaw);
+    if (wd.horseSpawn && opts.spawnHorse !== false) this.addHorse(new Horse(), wd.horseSpawn, wd.horseYaw);
 
     // NPCs walk a nav grid over the static colliders and hide behind the buildings.
-    this.nav = new NavGrid(this.world, wd.half);
+    this.nav = opts.nav ?? new NavGrid(this.world, wd.half);
     this.npcs = new NpcSystem(opts.npcs, this.world, this.nav, wd.cover);
     this.scene.add(this.npcs.group);
     for (const n of this.npcs.npcs) this.registerNpc(n);
@@ -181,11 +197,20 @@ export class Session {
         icons: engine.icons,
         dropToWorld: (item) => this.dropToWorld(item),
         toast: (t) => this.showToast(t),
-        useItem: (item) => this.player.useItem(item),
+        useItem: (item, from) => (itemDef(item.defId).reveals ? this.study(item, from) : this.player.useItem(item)),
       },
       engine.renderer,
     );
     engine.rig.snapTo(this.player.pos);
+  }
+
+  /** Right-click on a map scrap: the place goes on the world map and the scrap is used up. */
+  private study(item: ItemInstance, from: GridContainer): string | null {
+    const poi = itemDef(item.defId).reveals;
+    if (!poi || !this.hooks.study) return 'Nothing to read it against here';
+    from.remove(item);
+    this.hooks.study(poi);
+    return null;
   }
 
   /** Make an NPC shootable and lootable in this session. */
@@ -215,6 +240,52 @@ export class Session {
     this.npcDrops.set(npc, [...(this.npcDrops.get(npc) ?? []), ...items]);
   }
 
+  // ------------------------------------------------------------------ PoiRuntime (leave / return)
+
+  get containers(): readonly import('../world/Container').LootContainer[] {
+    return this.map.containers;
+  }
+
+  get npcList(): readonly Npc[] {
+    return this.npcs.npcs;
+  }
+
+  groundItems(): { item: ItemInstance; pos: THREE.Vector3; npc: Npc | null }[] {
+    return this.worldItems.items.map((w) => {
+      let npc: Npc | null = null;
+      for (const [n, list] of this.npcDrops) if (list.includes(w)) npc = n;
+      return { item: w.item, pos: w.position, npc };
+    });
+  }
+
+  placeItem(item: ItemInstance, pos: THREE.Vector3, npc: Npc | null): void {
+    const w = this.worldItems.placeAt(item, pos);
+    w.onPickup = (wi) => this.pickUp(wi);
+    if (npc) this.npcDrops.set(npc, [...(this.npcDrops.get(npc) ?? []), w]);
+  }
+
+  clearGroundItems(): void {
+    for (const w of [...this.worldItems.items]) this.worldItems.remove(w);
+    this.npcDrops.clear();
+  }
+
+  looseHorses(): HorseState[] {
+    return this.horses.map((h) => ({ pos: [h.pos.x, h.pos.z], yaw: h.heading, saddled: h.saddled, ...(h.pen ? { pen: h.pen } : {}) }));
+  }
+
+  /** Replace the horses standing around with these (penned ones graze in their paddock). */
+  setLooseHorses(horses: readonly HorseState[]): void {
+    for (const h of [...this.horses]) if (h !== this.riding) this.removeHorse(h);
+    for (const s of horses) {
+      const h = this.addHorse(new Horse(), new THREE.Vector3(s.pos[0], 0, s.pos[1]), s.yaw);
+      h.setSaddled(s.saddled !== false);
+      if (s.pen) {
+        h.pen = s.pen;
+        h.driver = grazingDriver(h, s.pen);
+      }
+    }
+  }
+
   /** The corpse is gone (respawn, or wave mode clearing the dead): its guns go with it. */
   clearNpcDrops(npc: Npc): void {
     for (const w of this.npcDrops.get(npc) ?? []) if (this.worldItems.items.includes(w)) this.worldItems.remove(w);
@@ -233,9 +304,21 @@ export class Session {
       this.particles.burst('hoof', back.add(m.position));
     };
     h.model.onHoof = (leg, speed01) => this.sound.hoof(h.pos, speed01, leg < 2);
-    h.canMount = () => !this.player.mounted && !this.player.dead && !h.ridden && !h.riderNpc;
+    h.canMount = () => !this.player.mounted && !this.player.dead && !h.ridden && !h.riderNpc && h.saddled;
     h.onMount = () => this.mount(h);
     return h;
+  }
+
+  /** Take a horse out of this map without destroying it (it travels on, or waits elsewhere). */
+  detachHorse(h: Horse): void {
+    const i = this.horses.indexOf(h);
+    if (i < 0) return;
+    if (this.riding === h) this.dismount();
+    this.horses.splice(i, 1);
+    this.horseColliders.delete(h);
+    h.model.root.removeFromParent();
+    h.model.onFootfall = null;
+    h.model.onHoof = null;
   }
 
   removeHorse(h: Horse): void {
@@ -359,11 +442,13 @@ export class Session {
       ...this.map.containers,
       ...(this.hooks.interactables?.() ?? []),
     ];
-    this.interactTarget = p.mounted || p.dead ? null : pickInteractable(interactables, p.pos, p.aimYaw);
+    // Riding, only things usable from the saddle count (trails out of the map).
+    this.interactTarget = p.dead ? null : pickInteractable(p.mounted ? interactables.filter((i) => i.fromSaddle) : interactables, p.pos, p.aimYaw);
     if (input.consume('KeyE') && !p.dead) {
-      // Context-sensitive: riding always dismounts, on foot use whatever is targeted.
-      if (p.mounted) this.dismount();
-      else this.interactTarget?.interact();
+      // Context-sensitive: on foot use whatever is targeted; riding, E dismounts unless there's
+      // something to use from the saddle.
+      if (this.interactTarget) this.interactTarget.interact();
+      else if (p.mounted) this.dismount();
     }
     if (input.consume('KeyG')) {
       const why = p.useBandage();
@@ -389,7 +474,7 @@ export class Session {
         h.update(dt, ml > 1e-6 ? dirToYaw(mx, mz) : null, input.sprint, this.world, others);
       } else if (h.driver) {
         const d = h.driver(dt);
-        h.update(dt, d.target, d.gallop, this.world, others);
+        h.update(dt, d.target, d.gallop, this.world, others, d.cap);
       } else {
         h.update(dt, null, false, this.world, others);
       }
@@ -516,6 +601,11 @@ export class Session {
   }
 
   /** Bring the player back (at `at`, or where they fell). */
+  /** Jump the camera to the player (after placing them somewhere new). */
+  snapCamera(): void {
+    this.engine.rig.snapTo(this.riding ? this.riding.pos : this.player.pos);
+  }
+
   revivePlayer(hpFraction: number, at?: THREE.Vector3): void {
     this.player.revive(at ?? this.player.pos.clone(), hpFraction);
   }
@@ -527,6 +617,8 @@ export class Session {
     p.mounted = true;
     h.ridden = true;
     h.driver = null;
+    h.pen = null; // ridden off: no longer a paddock horse
+    h.graze = 0;
     this.riding = h;
     p.vel.set(0, 0);
     h.model.saddle.add(p.model.root);
@@ -631,6 +723,7 @@ export class Session {
     for (const n of this.npcs.npcs) n.sync(alpha, animDt);
     this.projectiles.sync(alpha);
     this.worldItems.update(animDt);
+    this.map.update?.(animDt);
     // Lids keep moving while the loot view is open (the world behind it is paused).
     for (const c of this.map.containers) c.update(frameDt);
 
@@ -697,7 +790,11 @@ export class Session {
     });
     const ctx = engine.hud.context;
     this.hooks.drawHud?.(ctx, engine.lowW, engine.lowH, paused ? 0 : frameDt);
-    if (this.ui.open) this.ui.draw(ctx, engine.lowW, engine.lowH, engine.uiPointer);
+    if (this.ui.open) {
+      this.ui.draw(ctx, engine.lowW, engine.lowH, engine.uiPointer);
+      // Panels cover the usual spot: messages from them (map updated, unloaded…) show below.
+      if (this.toast) drawToast(ctx, this.toast.text, engine.lowW, engine.lowH - 40);
+    }
     engine.debug.draw(frameDt, rig.view, this.riding ?? this.horses[0] ?? null, [
       `low-res ${engine.lowW}x${engine.lowH} x${engine.scale}  pixel ${engine.pixelate ? 'on' : 'off'}  palette ${engine.pixelPass.quantize ? 'on' : 'off'} [O]  outlines [L]`,
       `player ${p.pos.x.toFixed(1)}, ${p.pos.z.toFixed(1)}  ${p.mounted ? 'mounted' : 'on foot'}  ammo ${p.ammo}`,
@@ -799,6 +896,11 @@ export class Session {
 
   /** Free everything this session created (geometries, materials, shadow map, preview target). */
   dispose(): void {
+    // The player outlives the map (a playthrough carries them on): take them out first — unless
+    // the next map's session already has them.
+    let o: THREE.Object3D | null = this.player.model.root;
+    while (o && o !== this.scene) o = o.parent;
+    if (o === this.scene) this.player.model.root.removeFromParent();
     this.sound.dispose();
     if (this.ui.open) this.ui.close();
     this.ui.dispose();

@@ -83,8 +83,12 @@ export class WorldItemSystem {
 
   /** Drop an item on the nearest free spot around `near`, starting in the `towardYaw` direction. */
   spawn(item: ItemInstance, near: THREE.Vector3, towardYaw: number, minRadius = 1): WorldItem {
-    const spot = this.freeSpot(near, towardYaw, minRadius);
-    const w = new WorldItem(item, spot, this.glintMat);
+    return this.placeAt(item, this.freeSpot(near, towardYaw, minRadius));
+  }
+
+  /** Put an item exactly at `spot` (restoring where it lay). */
+  placeAt(item: ItemInstance, spot: THREE.Vector3): WorldItem {
+    const w = new WorldItem(item, spot.clone().setY(0), this.glintMat);
     this.items.push(w);
     this.group.add(w.object);
     // Keep the sparkle out of the outline pass, but positioned with its item.

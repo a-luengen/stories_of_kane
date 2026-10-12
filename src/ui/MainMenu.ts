@@ -44,7 +44,7 @@ export class MainMenu {
 
     const best = readBestWave();
     this.list = new MenuList([
-      { label: 'SANDBOX', description: 'Explore the frontier town freely.', action: () => start('sandbox') },
+      { label: 'SANDBOX', description: 'Roam the frontier: a town, a ranch, a canyon.', action: () => start('sandbox') },
       { label: 'WAVE', sub: best > 0 ? `BEST: WAVE ${best}` : undefined, description: 'Survive endless waves of outlaws.', action: () => start('wave') },
       {
         label: 'STORY',

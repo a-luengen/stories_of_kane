@@ -1,5 +1,5 @@
 import { itemDef } from './ItemDef';
-import { footprint, newUid, type ItemInstance } from './ItemInstance';
+import { footprint, itemFromData, itemToData, newUid, type ItemInstance } from './ItemInstance';
 
 export interface Placement {
   item: ItemInstance;
@@ -185,4 +185,18 @@ export function splitStack(item: ItemInstance): ItemInstance | null {
   const half = Math.floor(item.quantity / 2);
   item.quantity -= half;
   return { uid: newUid(), defId: item.defId, quantity: half, rotated: item.rotated };
+}
+
+/** A grid's contents as plain data. */
+export function gridToData(g: GridContainer): import('./ItemInstance').PlacedItemData[] {
+  return g.placements.map((p) => ({ ...itemToData(p.item), x: p.x, y: p.y }));
+}
+
+/** Replace a grid's contents from plain data (items that no longer fit are skipped). */
+export function gridFromData(g: GridContainer, data: readonly import('./ItemInstance').PlacedItemData[]): void {
+  for (const p of [...g.placements]) g.remove(p.item);
+  for (const d of data) {
+    const item = itemFromData(d);
+    if (!g.place(item, d.x, d.y, d.rotated)) g.placeAnywhere(item);
+  }
 }

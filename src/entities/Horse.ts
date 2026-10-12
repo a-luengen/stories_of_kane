@@ -22,8 +22,14 @@ export class Horse implements Interactable {
   ridden = false;
   /** NPC riding it (wave-mode riders), or null. */
   riderNpc: object | null = null;
-  /** Steering when not ridden by the player (enemy rider, arriving / leaving on its own). */
-  driver: ((dt: number) => { target: number | null; gallop: boolean }) | null = null;
+  /** Steering when not ridden by the player (enemy rider, arriving / leaving on its own, grazing). */
+  driver: ((dt: number) => { target: number | null; gallop: boolean; cap?: number }) | null = null;
+  /** Wears a saddle (only saddled horses can be ridden). */
+  saddled = true;
+  /** Kept inside this area (a paddock: minX, minZ, maxX, maxZ), or free. */
+  pen: [number, number, number, number] | null = null;
+  /** 0..1: head down, grazing. */
+  graze = 0;
   /** Interpolated render yaw (heading changes from collisions are smoothed visually). */
   private renderYaw = 0;
   /** Last collision contact this step (for debug). */
@@ -41,6 +47,12 @@ export class Horse implements Interactable {
     this.onMount();
   }
 
+  /** Saddle on or off (unsaddled horses can't be ridden). */
+  setSaddled(on: boolean): void {
+    this.saddled = on;
+    this.model.setTack(on);
+  }
+
   get heading(): number {
     return this.motor.heading;
   }
@@ -53,10 +65,10 @@ export class Horse implements Interactable {
   }
 
   /** @param target desired heading or null */
-  update(dt: number, target: number | null, gallop: boolean, world: CollisionWorld, dynamic?: readonly CircleCollider[]): void {
+  update(dt: number, target: number | null, gallop: boolean, world: CollisionWorld, dynamic?: readonly CircleCollider[], cap = Infinity): void {
     this.prevPos.copy(this.pos);
     this.prevHeading = this.motor.heading;
-    this.motor.update(target, gallop, dt);
+    this.motor.update(target, gallop, dt, cap);
 
     const m = this.motor;
     this.pos.x += Math.sin(m.heading) * m.speed * dt;
@@ -83,6 +95,7 @@ export class Horse implements Interactable {
       braking: m.mode === 'braking',
       pivoting: m.mode === 'pivoting',
       ridden: this.ridden,
+      graze: this.graze,
     });
   }
 

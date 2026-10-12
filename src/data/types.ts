@@ -101,7 +101,7 @@ export interface AppearanceConfig {
 
 // ------------------------------------------------------------------------------------ items
 
-export type ItemCategory = 'weapon' | 'ammo' | 'clothing' | 'consumable';
+export type ItemCategory = 'weapon' | 'ammo' | 'clothing' | 'consumable' | 'map';
 
 export interface ItemDef {
   id: string;
@@ -122,6 +122,8 @@ export interface ItemDef {
   boxQuantity?: number;
   /** Consumables: heal this fraction of max HP over `duration` seconds. */
   heal?: { fraction: number; duration: number };
+  /** Map scraps: studying it (right-click) puts this POI on the world map; the scrap is used up. */
+  reveals?: string;
 }
 
 /** Inventory entry in NPC data: an item id and optional quantity. */
@@ -179,6 +181,17 @@ export interface NpcDef {
   tactics?: 'strafe' | 'cover' | 'rush';
   /** Come back at the spawn point after dying (default true). */
   respawns?: boolean;
+  /**
+   * Hostile NPCs holding a place (a camp): they keep to their routine until the player comes within
+   * `radius` of `at` and in sight, or shots land near them — then everyone holding it turns hostile.
+   * Without it, hostile NPCs come in fighting (wave mode).
+   */
+  territory?: { at: Vec2; radius: number };
   /** Runs a shop (an id in MERCHANT_SHOPS): E trades instead of talking. */
   shop?: string;
+  /**
+   * Directions to places: talking (E) says the first line about a place you haven't been to yet
+   * (instead of a greeting), and that place goes on your map.
+   */
+  hints?: { poi: string; line: string }[];
 }

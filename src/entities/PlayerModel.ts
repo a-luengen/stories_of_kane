@@ -61,6 +61,11 @@ export class PlayerModel {
     return this.rig.root;
   }
 
+  /** Snap the facing (arriving somewhere). */
+  face(yaw: number): void {
+    this.hipsYaw = this.upperYaw = yaw;
+  }
+
   setAppearance(a: AppearanceConfig): void {
     this.rig.applyAppearance(a);
   }

@@ -34,15 +34,16 @@ deploys there (`.github/workflows/deploy.yml`). One-time setup: repo Settings �
 | P | Toggle pixelation (debug) |
 | O / L | Toggle palette quantization / outlines |
 | F3 | Debug overlay (horse heading, input, turn radius, speed, FPS, NPC states) |
-| M | Mute / unmute all sound (a crossed-out speaker shows on the HUD) |
+| M | World map (sandbox; pauses like the inventory). Mute is in the pause menu's sound settings |
 | F4 | Sound debug: playing voices (bus, sample or synth, volume, distance) and rings at their sources |
+| F7 | World debug (sandbox): reveal all places and trails, reset discovery, show exit zones, teleport to any place's exit |
 
 ## Sound
 
 - `src/audio/AudioEngine.ts` (owned by `Engine`, lives for the whole app) runs one Web Audio graph: master ← ui, master ← world ← effects / voices / ambience. It starts on the first click or key press (browsers block audio before that).
 - Every sound is defined in `src/data/sounds.ts`: bus, volume, variation, limits (24 voices, per-sound caps and cooldowns) and a synthesized **recipe**. Recorded samples are optional: list them in `src/data/soundManifest.ts` and drop the files in `public/sounds/` (see its README). Until a sample loads — or if it's missing — the recipe plays, so the game sounds complete with an empty folder.
 - `src/audio/SessionAudio.ts` is a session's sound layer: the player is the listener (volume falls off with distance, sounds pan by their screen-side, far sounds get duller). Gunshots carry across the map; beyond 25 units they arrive late (sound travels at `CONFIG.audio.soundSpeed`), muffled and with an echo. Bullets passing within 1.5 units of your head whizz on the side they passed. Draw, holster and reload sounds come from the guns' state, so NPCs make them too. Footsteps come from the walk cycle (a sound each time a foot lands; louder running, soft crouching) on dirt or on the wooden porches (`WorldData.floors`); NPC steps are quieter. Horses play a hoofbeat per hoof (four even beats at a walk, a rolling gallop), snort when mounted and now and then while standing. NPCs never speak words: each speech bubble is **murmured** (`src/audio/murmur.ts`): a formant voice shaped by the line — a syllable per vowel group, pauses at punctuation, questions rising — in that NPC's own voice (pitch from body type, a per-NPC offset and vowel timbre, all from a seed) and in the line's mood (greet relaxed, warn loud and clipped, hostile low and harsh, flee high and fast, calm slow and soft). The bubble lasts as long as the murmur. Containers creak / scrape / unlatch open (and thump shut when wave mode restocks them); the inventory, loot and shop screens give feedback for lifting, setting down, rotating, equipping (clothes rustle, guns click), unloading, coins and a buzz when something doesn't fit. Wave mode has countdown ticks, a bell at the start and a sting when a wave is cleared.
-- Volumes (master, effects, voices, ambience) are in the pause menu and remembered; M mutes. Pausing or opening an inventory holds the world sounds; UI sounds keep playing.
+- Volumes (master, effects, voices, ambience) and Mute are in the pause menu and remembered. Pausing or opening an inventory holds the world sounds; UI sounds keep playing.
 
 ## Layout
 
@@ -90,6 +91,24 @@ NPCs are defined in `src/data/npcs.ts`. Adding one is a data change only: give i
 ## Game modes
 
 The game opens on a title screen (live desert backdrop). **Sandbox** is the frontier town. It has two merchants: a gunsmith leaning on a porch post (guns, ammo, bandages) and a tailor by the big west building (clothes only). You start with $150 (`CONFIG.sandbox.startingDollars`) and earn more by selling to them; each buys only what they sell. Shops are data: `MERCHANT_SHOPS` in `data/shop.ts`, and any NPC with `shop: '<id>'` trades instead of talking. **Story** isn't available yet.
+
+### The sandbox world
+
+The sandbox is a set of places (POIs) joined by trails: **Kane's Crossing** (the town), **Two Spurs Ranch** to the north and **Rattlesnake Gulch** to the east. The world is data (`src/data/world.ts`: POIs with their exits, trails between exits, world-map terrain; `validateWorld` checks it). Each place's map is loaded on demand (`src/world/poiMaps.ts`).
+
+- **Two Spurs Ranch** (`world/maps/twoSpursRanch.ts`): a farmhouse with a porch, a walk-in barn (it fades when you're inside) with containers, a paddock where unsaddled horses graze and wander, a corral with a hand leaning on the fence, a saddled horse at the hitching rail you can ride, a windmill, troughs, hay, wagons, and a stream you cross on the plank bridge. Ride a horse that isn't yours to another place and it becomes yours (your old one stays where it was).
+- **Rattlesnake Gulch** (`world/maps/rattlesnakeGulch.ts`): a dry canyon entered through narrow passes from the west trail (to town) and the north canyon trail (to the ranch). Inside: a dry riverbed, rock arches (they fade when they hide you), boulders, cacti, bleached bones and the abandoned mine. Four outlaws hold a tent camp around a campfire with a weapon crate, ammo boxes and a chest. They keep to their camp (`NpcDef.territory`): come within range and in sight, or land a shot near one of them, and the whole camp turns on you. A cleared camp stays cleared.
+- **Exits:** a worn trail leads to each map edge, with a signpost naming the destination ("???" if you don't know it yet). Stand in the exit zone and press **E** to travel (also from the saddle). Not while someone's shooting at you.
+- **Travel:** the screen fades, the next place loads in the background, and you arrive at the matching exit. Your horse comes along if you ride it or it stands within 6 units of the exit; otherwise it waits where you left it.
+- **Places keep their state** while the page is open: containers, NPCs (the dead stay dead, frozen in time), items on the ground and loose horses are saved as plain data when you leave and restored when you return.
+- **World map (M):** the terrain (drawn procedurally from `world.ts` like an old map), places you've visited (icon + name), places you've heard of ("?"), known trails (dashed where they lead somewhere you haven't been), a legend and a pulsing marker where you are. Hover a place for details; drag to pan.
+- **Discovery:** arriving somewhere makes it visited and shows its trails to places you know; walking into an exit tells you of the place behind it ("Map updated: …"). Saved per mode in localStorage (`sok.world.sandbox`), so it survives reloads.
+- **Map scraps:** 1×1 items; right-click one in any grid to study it. The place it shows goes on your map ("?") with its trails to places you've been, and the scrap is used up. One for the gulch lies in a chest on a town porch; one for the ranch is in the outlaws' chest in the gulch (`ItemDef.reveals`, `LootContainer.extras`).
+- **Directions:** NPCs with `hints` (`NpcDef.hints: [{ poi, line }]`) tell you the way to a place you haven't been yet when you talk to them (E) instead of greeting you, and it goes on your map. The gunsmith points to the ranch, the rancher to the gulch.
+- Every new place or trail shows a "Map updated: …" message.
+- **The ride:** travelling fades into the world map, where a rider follows the trail (2–4 s) while the destination loads; "Arriving..." if it takes longer, E or a click skips once it's ready.
+- **Fast travel** (pause menu → Gameplay, off by default, remembered): click a visited place on the world map to ride there along the shortest chain of known trails. Not during a fight.
+- `src/core/Playthrough.ts` carries everything across maps: the player (bags, equipment, health), the purse, the horse, discovery and each place's saved state.
 
 **Wave** takes place in an abandoned outpost ringed by canyon walls:
 

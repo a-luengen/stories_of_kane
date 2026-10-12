@@ -38,3 +38,29 @@ export function itemLabel(item: ItemInstance): string {
   const d = itemDef(item.defId);
   return d.stackable ? `${d.name} x${item.quantity}` : d.name;
 }
+
+/** An item as plain data (for saving a place's state). */
+export interface ItemData {
+  defId: string;
+  quantity: number;
+  rotated: boolean;
+  loadedRounds?: number;
+}
+
+/** An item in a grid cell, as plain data. */
+export interface PlacedItemData extends ItemData {
+  x: number;
+  y: number;
+}
+
+export function itemToData(item: ItemInstance): ItemData {
+  const d: ItemData = { defId: item.defId, quantity: item.quantity, rotated: item.rotated };
+  if (item.loadedRounds !== undefined) d.loadedRounds = item.loadedRounds;
+  return d;
+}
+
+export function itemFromData(d: ItemData): ItemInstance {
+  const item = createItem(d.defId, d.quantity, d.loadedRounds);
+  item.rotated = d.rotated;
+  return item;
+}

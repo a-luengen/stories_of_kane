@@ -40,6 +40,15 @@ export function buildItemMesh(def: ItemDef): THREE.Object3D {
     part(boxGeo(0.18, 0.05, 0.03), red, 0, 0.2, 0.2, out);
     return out;
   }
+  if (def.reveals) {
+    // A torn scrap of parchment lying flat, a trail and a place inked on it.
+    part(boxGeo(0.5, 0.02, 0.42, -1), PAL.sandPale, 0, 0, 0, out);
+    part(boxGeo(0.16, 0.021, 0.12, -1), PAL.sandLight, 0.2, 0, -0.18, out); // the torn corner
+    const ink = def.icon?.tint ?? PAL.rust;
+    for (let i = 0; i < 4; i++) part(boxGeo(0.08, 0.03, 0.05, -1), PAL.darkBrown, -0.18 + i * 0.09, 0.0, 0.12 - i * 0.06, out);
+    part(boxGeo(0.14, 0.035, 0.14, -1), ink, 0.15, 0, -0.08, out);
+    return out;
+  }
   // Ammo box: card box with a coloured band and a few cartridges on top.
   const tint = def.icon?.tint ?? PAL.red;
   part(boxGeo(0.5, 0.28, 0.34, -1), PAL.sandLight, 0, 0, 0, out);

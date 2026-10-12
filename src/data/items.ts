@@ -110,6 +110,28 @@ const DEFS: ItemDef[] = [
     heal: { fraction: 0.4, duration: 2 },
     icon: { tint: PAL.red },
   },
+  {
+    id: 'map_scrap_gulch',
+    name: 'Map Scrap: Rattlesnake Gulch',
+    description: 'A torn corner of a survey map, a canyon inked east of town. Right-click to study.',
+    category: 'map',
+    size: { w: 1, h: 1 },
+    stackable: false,
+    maxStack: 1,
+    reveals: 'rattlesnake-gulch',
+    icon: { tint: PAL.rust },
+  },
+  {
+    id: 'map_scrap_ranch',
+    name: 'Map Scrap: Two Spurs Ranch',
+    description: 'A sketch of a ranch north of town, with a trail through the canyon. Right-click to study.',
+    category: 'map',
+    size: { w: 1, h: 1 },
+    stackable: false,
+    maxStack: 1,
+    reveals: 'two-spurs-ranch',
+    icon: { tint: PAL.cactus },
+  },
   ...Object.values(ClothingRegistry).map(
     (c): ItemDef => ({
       id: c.id,

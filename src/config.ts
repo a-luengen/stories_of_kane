@@ -71,7 +71,7 @@ export const CONFIG = {
     acceleration: 38,
     deceleration: 30,
     mountRange: 2.6,
-    maxHp: 100,
+    maxHp: 150,
     /** Health regenerates after this long without taking damage (s)... */
     regenDelay: 5,
     /** ...at this rate (hp/s). */
@@ -278,6 +278,10 @@ export const CONFIG = {
   world: {
     size: 100,
     seed: 1337,
+    /** Your horse travels with you if you ride it or it stands this close to the exit. */
+    horseFollowRadius: 6,
+    /** Fading out / in around a journey (s). */
+    travelFade: 0.45,
   },
 };
 

@@ -159,5 +159,6 @@ export function buildOutpostMap(_targets: TargetSystem): WorldData {
     horseYaw: 0,
     containers: containers.items,
     floors: [],
+    exitSigns: [],
   };
 }

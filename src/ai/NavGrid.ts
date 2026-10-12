@@ -25,6 +25,8 @@ export class NavGrid {
     readonly half: number,
     readonly cell = 0.5,
     private radius = 0.42,
+    /** False: leave the cells for `build` to fill in slices. */
+    fill = true,
   ) {
     this.n = Math.ceil((half * 2) / cell);
     const total = this.n * this.n;
@@ -33,13 +35,21 @@ export class NavGrid {
     this.parent = new Int32Array(total);
     this.stamp = new Uint32Array(total);
     this.closed = new Uint32Array(total);
-    for (let j = 0; j < this.n; j++) {
-      for (let i = 0; i < this.n; i++) {
-        const x = this.cx(i);
-        const z = this.cx(j);
-        this.blocked[j * this.n + i] = this.blockedAt(world, x, z) ? 1 : 0;
-      }
+    if (fill) for (let j = 0; j < this.n; j++) this.fillRow(world, j);
+  }
+
+  private fillRow(world: CollisionWorld, j: number): void {
+    for (let i = 0; i < this.n; i++) this.blocked[j * this.n + i] = this.blockedAt(world, this.cx(i), this.cx(j)) ? 1 : 0;
+  }
+
+  /** Build a grid a few rows at a time, awaiting `pause()` between slices (keeps frames smooth). */
+  static async build(world: CollisionWorld, half: number, pause: () => Promise<void>, cell = 0.5, radius = 0.42, rowsPerSlice = 24): Promise<NavGrid> {
+    const nav = new NavGrid(world, half, cell, radius, false);
+    for (let j = 0; j < nav.n; j++) {
+      nav.fillRow(world, j);
+      if ((j + 1) % rowsPerSlice === 0) await pause();
     }
+    return nav;
   }
 
   private blockedAt(world: CollisionWorld, x: number, z: number): boolean {

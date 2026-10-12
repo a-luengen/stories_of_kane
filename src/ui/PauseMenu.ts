@@ -91,7 +91,7 @@ export class PauseMenu {
       }
       const sx = Math.round(px + (pw - sl.width) / 2);
       const sy = py + 18 + this.list.height + 10;
-      sl.update(sx, sy, ptr, e.input.mouseDown, left, right);
+      sl.update(sx, sy, ptr, e.input.mouseDown, left, right, sl.focus !== null && keys.confirm);
       this.list.update(px + 12, py + 18, ptr, listKeys);
       // Pointing at a button takes the focus back from the sliders.
       const overList = ptr.x >= px + 12 && ptr.x < px + 12 + this.list.w && ptr.y >= py + 18 && ptr.y < py + 18 + this.list.height;

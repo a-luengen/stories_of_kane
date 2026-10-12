@@ -216,6 +216,13 @@ export class NpcModel {
     return this.fall < 0.6 ? smoothstep(0, 0.35, this.fall) : lerp(1, 0.35, (this.fall - 0.6) / 0.4);
   }
 
+  /** Lying dead already (a corpse found on returning to a place). */
+  snapDead(yaw: number): void {
+    this.face(yaw);
+    this.fall = 1;
+    this.crouch = 0;
+  }
+
   /** Snap the facing (on spawn). */
   face(yaw: number): void {
     this.hipsYaw = this.upperYaw = yaw;

@@ -128,14 +128,7 @@ export class Hud {
     drawWeaponBar(ctx, 4, barY, s.weaponBar, this.time);
     if (s.mounted && s.speedLabel) drawText(ctx, s.speedLabel, 4 + 3 * (SLOT_W + 2) + 4, barY + 6, C.cream, C.ink);
 
-    if (s.toast) {
-      const tw = textWidth(s.toast);
-      const x = Math.round(W / 2 - tw / 2);
-      const y = Math.round(H * 0.72);
-      ctx.fillStyle = 'rgba(31,21,16,0.7)';
-      ctx.fillRect(x - 3, y - 2, tw + 6, 9);
-      drawText(ctx, s.toast, x, y, C.brassLight);
-    }
+    if (s.toast && !s.menuOpen) drawToast(ctx, s.toast, W, Math.round(H * 0.72));
 
     if (s.prompt) {
       const tw = textWidth(s.prompt);
@@ -243,4 +236,13 @@ function wrap(text: string, max: number): string[] {
   }
   if (line) lines.push(line);
   return lines;
+}
+
+/** A short message centred at height `y` (over the game, or under an open panel). */
+export function drawToast(ctx: CanvasRenderingContext2D, text: string, W: number, y: number): void {
+  const tw = textWidth(text);
+  const x = Math.round(W / 2 - tw / 2);
+  ctx.fillStyle = 'rgba(31,21,16,0.85)';
+  ctx.fillRect(x - 3, y - 2, tw + 6, 9);
+  drawText(ctx, text, x, y, C.brassLight);
 }

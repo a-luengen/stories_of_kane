@@ -23,7 +23,7 @@ const exitOf = (poi: string, id: string) => poiById(SANDBOX_WORLD, poi).exits.fi
 describe('world data', () => {
   it('the sandbox world is valid: ids, links, reachability, builders', () => {
     expect(validateWorld(SANDBOX_WORLD, Object.keys(POI_MAPS))).toEqual([]);
-    expect(SANDBOX_WORLD.pois.map((p) => p.name)).toEqual(["Kane's Crossing", 'Two Spurs Ranch', 'Rattlesnake Gulch']);
+    expect(SANDBOX_WORLD.pois.map((p) => p.name)).toEqual(["Kane's Crossing", 'Two Spurs Ranch', 'Rattlesnake Gulch', 'Desert Plains']);
   });
 
   it('catches broken links, unreachable places, duplicates and missing builders', () => {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { AnimalSpawn } from '../../data/animals';
 import type { NpcDef, Vec2 } from '../../data/types';
 import type { ExitDef } from '../../data/world';
 import type { TargetSystem } from '../../entities/Targets';
@@ -27,9 +28,15 @@ const STREAM: Vec2[] = [
 const STREAM_W = 2.6;
 const BRIDGE_X = 0;
 
-/** The big paddock (minX, minZ, maxX, maxZ) the ranch horses graze in, and the small corral. */
+/** The big paddock (minX, minZ, maxX, maxZ) the ranch horses graze in, and the small corral (the pigs' pen). */
 export const PADDOCK: [number, number, number, number] = [-6, 6, 18, 22];
-const CORRAL: [number, number, number, number] = [21, -6, 29, 2];
+export const CORRAL: [number, number, number, number] = [21, -6, 29, 2];
+/** The cows' pasture, west of the yard, with its gate towards the house. */
+export const PASTURE: [number, number, number, number] = [-38, 4, -24, 22];
+/** The chicken coop, behind the farmhouse; the hens scratch about the yard around it. */
+const COOP: Vec2 = [-25, -13];
+
+const inside = (r: readonly number[], x: number, z: number) => x > r[0] && x < r[2] && z > r[1] && z < r[3];
 
 function distToStream(x: number, z: number): number {
   let best = Infinity;
@@ -63,8 +70,9 @@ function groundColor(x: number, z: number, rng: Rng, first: boolean): number {
   else if (r < 0.06) col = 0x6c8a3c;
   // The yard between house, barn and corral: packed dirt.
   if (x > -24 && x < 31 && z > -22 && z < 4 && valueNoise2(x * 0.2, z * 0.2, 53) > 0.35) col = n < 0.5 ? 0xb08a58 : PAL.sandDark;
-  // Trampled paddock: patches of bare earth.
-  if (x > PADDOCK[0] && x < PADDOCK[2] && z > PADDOCK[1] && z < PADDOCK[3] && n > 0.55) col = 0x9a7a4e;
+  // Trampled paddock and pasture: patches of bare earth. The pig pen: mostly mud.
+  if ((inside(PADDOCK, x, z) || inside(PASTURE, x, z)) && n > 0.55) col = 0x9a7a4e;
+  if (inside(CORRAL, x, z) && n > 0.3) col = n > 0.6 ? PAL.brown : 0x7a5a3a;
   // The stream: water, then a darker, lusher bank.
   const d = distToStream(x, z);
   if (d < STREAM_W / 2) col = d < STREAM_W / 4 ? PAL.skyDeep : 0x6f97b0;
@@ -230,7 +238,21 @@ function windmill(group: THREE.Group, b: StaticBatch, cw: CollisionWorld, x: num
   };
 }
 
-/** Two Spurs Ranch: farmhouse, barn, paddock with horses, corral, windmill, the stream. */
+/** A little chicken coop on stilts: plank walls, a sloping roof, a pop hole and a ramp up to it (front = +X). */
+function chickenCoop(b: StaticBatch, cw: CollisionWorld, x: number, z: number): void {
+  const w = 1.6;
+  const d = 2.2;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.12, 0.4, 0.12, PAL.darkBrown, x + sx * (w / 2 - 0.1), 0, z + sz * (d / 2 - 0.1));
+  b.box(w, 1.0, d, PAL.woodLight, x, 0.4, z);
+  for (let y = 0.6; y < 1.4; y += 0.25) b.box(w + 0.03, 0.04, d + 0.03, shade(PAL.woodLight, 0.75), x, y, z); // plank seams
+  b.box(0.08, 0.5, d, PAL.woodLight, x + w / 2 - 0.04, 1.4, z); // the taller front wall
+  b.put(new THREE.BoxGeometry(w + 0.5, 0.1, d + 0.4), PAL.rust, x, 1.7, z, 0, 0, 0.3); // roof, sloping to the back
+  b.box(0.06, 0.38, 0.32, PAL.ink, x + w / 2 + 0.01, 0.48, z + 0.4); // pop hole
+  b.put(new THREE.BoxGeometry(1.0, 0.05, 0.34), PAL.wood, x + w / 2 + 0.45, 0.22, z + 0.4, 0, 0, -0.45); // ramp
+  cw.addBox(x - w / 2, z - d / 2, x + w / 2, z + d / 2, 1.6, 'wood');
+}
+
+/** Two Spurs Ranch: farmhouse, barn, paddock with horses, pig pen, cow pasture, chicken coop, windmill, the stream. */
 export function buildRanchMap(_targets: TargetSystem, exits: readonly ExitDef[]): WorldData {
   const rng = new Rng(4242);
   const group = new THREE.Group();
@@ -248,15 +270,16 @@ export function buildRanchMap(_targets: TargetSystem, exits: readonly ExitDef[])
   hitchingRail(batch, cw, -6, -4.2);
   trough(batch, cw, -6, -1.6);
   wagon(batch, cw, 25, -15, 0.35, 'covered');
-  wagon(batch, cw, -27, 12, 1.2, 'intact');
+  wagon(batch, cw, -19, 15, 1.2, 'intact');
   // Hay: a stack by the barn door, bales inside, a few in the paddock.
   for (const [x, z, r, y] of [[5.2, -7.6, 0.1, 0], [6.4, -7.4, -0.1, 0], [5.8, -7.5, 0, 0.55], [17, -11.2, 1.57, 0], [17, -12.4, 1.57, 0], [17, -11.8, 1.57, 0.55], [14, 18, 0.4, 0], [-2, 19, 1.2, 0]] as const) {
     hayBale(batch, cw, x, z, r, y);
   }
 
-  // ---------------------------------------------------------------- windmill + trough
+  // ---------------------------------------------------------------- windmill + trough, the coop
   const spin = windmill(group, batch, cw, -26, -2);
   trough(batch, cw, -23, 1.2);
+  chickenCoop(batch, cw, COOP[0], COOP[1]);
 
   // ---------------------------------------------------------------- paddock & corral
   const [px0, pz0, px1, pz1] = PADDOCK;
@@ -273,6 +296,16 @@ export function buildRanchMap(_targets: TargetSystem, exits: readonly ExitDef[])
   fence(batch, cw, cx1, cz1, cx0, cz1);
   fence(batch, cw, cx0, cz1, cx0, cz0 + 3); // gap on the west side
   fence(batch, cw, cx0, cz0, cx0, cz0 + 1);
+  trough(batch, cw, 25.5, -5.2); // the pigs' feed trough along the north fence
+  // The cow pasture: a long fence, its gate (a gap) on the east side, facing the yard.
+  const [qx0, qz0, qx1, qz1] = PASTURE;
+  fence(batch, cw, qx0, qz0, qx1, qz0);
+  fence(batch, cw, qx1, qz0, qx1, 10);
+  fence(batch, cw, qx1, 13.5, qx1, qz1);
+  fence(batch, cw, qx1, qz1, qx0, qz1);
+  fence(batch, cw, qx0, qz1, qx0, qz0);
+  trough(batch, cw, -31, 20.6);
+  hayBale(batch, cw, -35, 6, 0.3);
 
   // ---------------------------------------------------------------- stream + bridge
   // Too deep to wade (except over the bridge): water blocks walking, not bullets.
@@ -320,7 +353,7 @@ export function buildRanchMap(_targets: TargetSystem, exits: readonly ExitDef[])
   // ---------------------------------------------------------------- exits & scenery
   const exitSigns = trailExits(batch, cw, exits, HALF, rng);
   const occupied = exitCorridors(exits, HALF);
-  occupied.push({ x: 0, z: -6, r: 26 }, { x: 6, z: 14, r: 14 }, { x: -26, z: 0, r: 4 }, { x: 25, z: -2, r: 6 });
+  occupied.push({ x: 0, z: -6, r: 26 }, { x: 6, z: 14, r: 14 }, { x: -26, z: 0, r: 4 }, { x: 25, z: -2, r: 6 }, { x: -31, z: 13, r: 11 }, { x: -24, z: -12, r: 5 });
   const free = (x: number, z: number, r: number) => occupied.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + r) && distToStream(x, z) > STREAM_W / 2 + 1 + r;
   for (let placed = 0, tries = 0; placed < 40 && tries < 2000; tries++) {
     const x = rng.range(-HALF + 2, HALF - 2);
@@ -369,6 +402,22 @@ export const RANCH_HORSES: HorseState[] = [
   { pos: [-6, -2.9], yaw: Math.PI / 2 },
 ];
 
+/**
+ * The livestock: cows in the pasture, pigs in the pen, and the hens scratching about the yard
+ * between the coop and the windmill. A few wild bison graze across the stream, south-west.
+ */
+export const RANCH_ANIMALS: AnimalSpawn[] = [
+  { species: 'cow', at: [-34, 8], yaw: 0.6, pen: PASTURE },
+  { species: 'cow', at: [-29, 12], yaw: 2.4, pen: PASTURE },
+  { species: 'cow', at: [-34, 16], yaw: -1.1, pen: PASTURE },
+  { species: 'cow', at: [-28, 19], yaw: 1.9, pen: PASTURE },
+  { species: 'pig', at: [23.5, -2.5], yaw: 1.2, pen: CORRAL },
+  { species: 'pig', at: [26.5, -0.5], yaw: -2.2, pen: CORRAL },
+  { species: 'pig', at: [24.5, -3.6], yaw: 0.2, pen: CORRAL },
+  ...([[-22.5, -10.5], [-23.5, -8], [-21, -7.5], [-25.5, -9], [-22, -5.5], [-24.5, -6]] as Vec2[]).map((at, i): AnimalSpawn => ({ species: 'chicken', at, yaw: i * 1.3, roam: 5 })),
+  ...([[-27, 35], [-22, 36], [-17, 35]] as Vec2[]).map((at, i): AnimalSpawn => ({ species: 'bison', at, yaw: 1.4 + i, roam: 5 })),
+];
+
 const RANCH_HAT = { hat: 'cowboy_hat_brown', top: 'shirt_grey', legs: 'trousers_brown', boots: 'boots_brown' };
 
 /** The people of Two Spurs Ranch. */
@@ -392,12 +441,16 @@ export const RANCH_NPCS: NpcDef[] = [
     lines: {
       greet: ['Welcome to Two Spurs.', 'Best horses this side of the river.', "Mind the stream, it's deeper than it looks."],
     },
-    hints: [{ poi: 'rattlesnake-gulch', line: "Outlaws hold Rattlesnake Gulch now. The canyon trail east of here runs right into 'em." }],
+    hints: [
+      { poi: 'rattlesnake-gulch', line: "Outlaws hold Rattlesnake Gulch now. The canyon trail east of here runs right into 'em." },
+      { poi: 'desert-plains', line: "Out west past the house are the Desert Plains. Bison, wolves - and a grizzly. Keep low near the wolves." },
+    ],
   },
   {
+    // Minds the pigs (and keeps a revolver for whoever bothers them).
     id: 'ranch-hand-fence',
     attitude: 'friendly',
-    defendsOthers: false,
+    defendsOthers: true,
     appearance: {
       body: 'male',
       skin: PAL.skinDark,
@@ -405,7 +458,7 @@ export const RANCH_NPCS: NpcDef[] = [
       hairStyle: 'short',
       clothing: { ...RANCH_HAT, neck: 'bandana_red', legs: 'chaps_wood' },
     },
-    weapon: null,
+    weapon: 'revolver',
     spawn: [24.5, 2.6],
     // Leaning back on the corral fence.
     routine: { kind: 'lean', at: [24.5, 2.6], facing: 0 },

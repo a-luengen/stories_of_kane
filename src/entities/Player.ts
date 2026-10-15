@@ -71,6 +71,12 @@ export class Player implements Target {
   healLeft = 0;
   private healRate = 0;
   private healTotal = 0;
+  /** Seconds left of petting a dog or cat (crouched beside it; moving or drawing stops it). */
+  petLeft = 0;
+  /** Which way the pet is. */
+  private petYaw = 0;
+  /** 0..1: blend into the petting pose. */
+  private petBlend = 0;
   /** 1 right after taking damage, fades to 0 (HUD flash). */
   hurt = 0;
   private sinceHurt = 0;
@@ -185,6 +191,7 @@ export class Player implements Target {
     if (this.dead) input = { ...input, moveX: 0, moveZ: 0 };
     const pc = CONFIG.player;
     const hasInput = input.moveX !== 0 || input.moveZ !== 0;
+    if (hasInput) this.petLeft = 0;
     // C toggles; Shift while crouched stands you up into a sprint (unless something is overhead).
     if (input.crouch && !this.dead) {
       if (!this.crouched) this.crouched = true;
@@ -243,6 +250,9 @@ export class Player implements Target {
     const ax = input.aim.x - this.pos.x;
     const az = input.aim.z - this.pos.z;
     if (ax * ax + az * az > 0.01) this.aimYaw = dirToYaw(ax, az);
+    // Petting: facing the pet; reaching for the gun stops it.
+    if (input.fireHeld || input.reload || input.select !== null) this.petLeft = 0;
+    if (this.petLeft > 0) this.aimYaw = this.moveYaw = this.petYaw;
     this.recoil = moveToward(this.recoil, 0, dt * 5);
     this.recoilL = moveToward(this.recoilL, 0, dt * 5);
     this.noAmmo = Math.max(0, this.noAmmo - dt);
@@ -379,6 +389,7 @@ export class Player implements Target {
 
   update(dt: number): void {
     this.hurt = Math.max(0, this.hurt - dt * 2.5);
+    this.petLeft = this.dead || this.mounted ? 0 : Math.max(0, this.petLeft - dt);
     if (this.dead) return;
     this.sinceHurt += dt;
     const pc = CONFIG.player;
@@ -389,6 +400,14 @@ export class Player implements Target {
       this.healLeft -= k;
     }
     if (this.regen && this.sinceHurt > pc.regenDelay) this.hp = Math.min(pc.maxHp, this.hp + pc.regenRate * dt);
+  }
+
+  /** Crouch beside a dog or cat at `at` and pet it a while (gun put away). */
+  pet(at: THREE.Vector3): void {
+    if (this.dead || this.mounted) return;
+    this.petLeft = CONFIG.player.petTime;
+    this.petYaw = dirToYaw(at.x - this.pos.x, at.z - this.pos.z);
+    this.holster();
   }
 
   /** 0..1 bandaging progress, or -1. */
@@ -433,6 +452,7 @@ export class Player implements Target {
 
   animate(dt: number): void {
     this.syncEquipment();
+    this.petBlend = moveToward(this.petBlend, this.petLeft > 0 ? 1 : 0, dt / 0.25);
     const def: WeaponDef | null = this.weapon?.def ?? null;
     this.model.animate(dt, {
       speed: this.mounted ? 0 : this.speed(),
@@ -448,7 +468,9 @@ export class Player implements Target {
       dead: this.dead,
       draw: this.draw,
       active: this.weapon ? this.active : null,
-      crouch: this.crouch,
+      // Petting: down on one's heels beside the animal.
+      crouch: Math.max(this.crouch, this.petBlend),
+      pet: this.petBlend,
       longGun: def?.look.kind === 'longgun',
     });
   }

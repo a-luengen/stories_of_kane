@@ -80,13 +80,21 @@ export class NpcSystem {
   onPlayerHitNpc(victim: Npc, player: PlayerView): void {
     const ctx = this.contextFor(player);
     victim.provoke(ctx);
-    const nc = CONFIG.npc;
+    this.witnesses(this.tmpB.set(victim.pos.x, CONFIG.npc.chestHeight, victim.pos.z), victim, CONFIG.npc.witnessRange, player, ctx);
+  }
+
+  /** The player shot somebody's animal (at `body`, a point on it): defenders who see it join in. */
+  onPlayerHurtAnimal(body: THREE.Vector3, player: PlayerView): void {
+    this.witnesses(this.tmpB.copy(body), null, CONFIG.npc.livestockWitnessRange, player, this.contextFor(player));
+  }
+
+  /** Every defender within `range` of `seen` who can see it or the player is provoked. */
+  private witnesses(seen: THREE.Vector3, victim: Npc | null, range: number, player: PlayerView, ctx: NpcContext): void {
     const chest = playerChest(player, this.tmpA);
     for (const n of this.npcs) {
       if (n === victim || !n.alive || !n.def.defendsOthers) continue;
-      if (n.pos.distanceTo(victim.pos) > nc.witnessRange) continue;
-      const seesVictim = this.lineOfSight(n.pos, this.tmpB.set(victim.pos.x, nc.chestHeight, victim.pos.z));
-      if (seesVictim || this.lineOfSight(n.pos, chest)) n.provoke(ctx);
+      if (Math.hypot(n.pos.x - seen.x, n.pos.z - seen.z) > range) continue;
+      if (this.lineOfSight(n.pos, seen) || this.lineOfSight(n.pos, chest)) n.provoke(ctx);
     }
   }
 
@@ -97,6 +105,16 @@ export class NpcSystem {
       if (n === hitNpc || !n.alive) continue;
       if (Math.hypot(point.x - n.pos.x, point.z - n.pos.z) <= r) n.nearMiss();
     }
+  }
+
+  /**
+   * An animal (`foe`) is after `npc`, or going for someone right by it: an armed NPC fights it, an
+   * unarmed one runs from it. Someone already fighting the player keeps at that.
+   */
+  threatenedBy(npc: Npc, foe: PlayerView): void {
+    if (!npc.alive || npc.foe === foe || (npc.mode !== 'routine' && !npc.foe)) return;
+    npc.foe = foe;
+    npc.provoke(this.contextFor(foe));
   }
 
   /** Everyone stands down (e.g. after the player respawns). */

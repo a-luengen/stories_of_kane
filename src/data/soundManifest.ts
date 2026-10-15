@@ -22,4 +22,24 @@ export const SAMPLES: Record<string, string[]> = {
   'step.dirt': [], // 'steps/dirt_1.ogg' … 'steps/dirt_4.ogg'
   'step.wood': [], // 'steps/wood_1.ogg' … 'steps/wood_4.ogg'
   'hoof.dirt': [], // 'horses/hoof_1.ogg' … 'horses/hoof_4.ogg'
+  'cow.moo': [], // 'animals/cow_moo_1.ogg' … 'animals/cow_moo_3.ogg'
+  'pig.oink': [], // 'animals/pig_oink_1.ogg' … 'animals/pig_oink_3.ogg'
+  'chicken.cluck': [], // 'animals/chicken_cluck_1.ogg' … 'animals/chicken_cluck_3.ogg'
+  'dog.bark': [], // 'animals/dog_bark_1.ogg' … 'animals/dog_bark_3.ogg'
+  'cat.meow': [], // 'animals/cat_meow_1.ogg' … 'animals/cat_meow_3.ogg'
+  'cat.purr': [], // 'animals/cat_purr_1.ogg' (about 2 s)
+  'bison.grunt': [], // 'animals/bison_grunt_1.ogg', 'animals/bison_grunt_2.ogg'
+  'bison.stampede': [], // 'animals/stampede_1.ogg' (3–4 s)
+  'bear.growl': [], // 'animals/bear_growl_1.ogg', 'animals/bear_growl_2.ogg'
+  'bear.roar': [], // 'animals/bear_roar_1.ogg', 'animals/bear_roar_2.ogg'
+  'bear.swipe': [], // 'animals/bear_swipe_1.ogg'
+  'wolf.growl': [], // 'animals/wolf_growl_1.ogg', 'animals/wolf_growl_2.ogg'
+  'wolf.bite': [], // 'animals/wolf_bite_1.ogg', 'animals/wolf_bite_2.ogg'
+  'wolf.howl': [], // 'animals/wolf_howl_1.ogg', 'animals/wolf_howl_2.ogg'
+  'wolf.yelp': [], // 'animals/wolf_yelp_1.ogg', 'animals/wolf_yelp_2.ogg'
+  'snake.rattle': [], // 'animals/snake_rattle_1.ogg' (about 1 s)
+  'snake.hiss': [], // 'animals/snake_hiss_1.ogg'
+  'snake.strike': [], // 'animals/snake_strike_1.ogg'
+  'animal.hit': [], // 'animals/hit_1.ogg', 'animals/hit_2.ogg' (played pitched per species)
+  'animal.death': [], // 'animals/death_1.ogg', 'animals/death_2.ogg' (played pitched per species)
 };

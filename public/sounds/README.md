@@ -13,8 +13,8 @@ sound automatically once they load.
   ```
 
 - After the player's first click / key press the game fetches and decodes every listed file in
-  the background (`import.meta.env.BASE_URL + 'sounds/' + file`, so it works on GitHub Pages under
-  `/stories_of_kane/` too).
+  the background (`import.meta.env.BASE_URL + 'sounds/' + file`, so it works wherever the game is
+  served from).
 - Each play picks a random loaded variant (never the same one twice in a row) and adds a little
   pitch / volume variation.
 - Until a sound's files have loaded — or if none of them can be fetched or decoded — its
@@ -29,6 +29,37 @@ sound automatically once they load.
   to about −1 dBFS peak. Keep files mono: panning and distance are applied by the game.
 - Suggested length: gunshots 0.5–1.5 s (the game adds the distant echo itself), impacts and
   footsteps 0.1–0.4 s.
+
+## Sounds waiting for recordings
+
+Every id in `soundManifest.ts` with an empty list plays its synthesized recipe. Suggested file
+names are in the comment next to each id. For the animals:
+
+| Sound id | Suggested files | What it is |
+|---|---|---|
+| `cow.moo` | `animals/cow_moo_1.ogg` … `_3` | A cow mooing, 1–2 s |
+| `pig.oink` | `animals/pig_oink_1.ogg` … `_3` | A few grunts / oinks, under 1 s |
+| `chicken.cluck` | `animals/chicken_cluck_1.ogg` … `_3` | Clucking, under 1 s |
+| `dog.bark` | `animals/dog_bark_1.ogg` … `_3` | One or two barks, under 1 s |
+| `cat.meow` | `animals/cat_meow_1.ogg` … `_3` | A meow, under 1 s |
+| `cat.purr` | `animals/cat_purr_1.ogg` | Purring, about 2 s (as long as the petting) |
+| `bison.grunt` | `animals/bison_grunt_1.ogg`, `_2` | A deep grunt, under 1 s |
+| `bison.stampede` | `animals/stampede_1.ogg` | A herd galloping past, 3–4 s |
+| `bear.growl` | `animals/bear_growl_1.ogg`, `_2` | A low growl, about 1 s |
+| `bear.roar` | `animals/bear_roar_1.ogg`, `_2` | A grizzly's roar, 1–2 s (its warning) |
+| `bear.swipe` | `animals/bear_swipe_1.ogg` | A paw swipe and the blow |
+| `wolf.growl` | `animals/wolf_growl_1.ogg`, `_2` | A snarl, about 1 s |
+| `wolf.bite` | `animals/wolf_bite_1.ogg`, `_2` | Jaws snapping |
+| `wolf.howl` | `animals/wolf_howl_1.ogg`, `_2` | A howl, 2–3 s |
+| `wolf.yelp` | `animals/wolf_yelp_1.ogg`, `_2` | A hurt yelp (wolves use it instead of `animal.hit`) |
+| `snake.rattle` | `animals/snake_rattle_1.ogg` | The rattle, about 1 s (repeats while it warns) |
+| `snake.hiss` | `animals/snake_hiss_1.ogg` | A hiss |
+| `snake.strike` | `animals/snake_strike_1.ogg` | A strike |
+| `animal.hit` | `animals/hit_1.ogg`, `animals/hit_2.ogg` | A pained squeal; the game pitches it down for cows, up for chickens |
+| `animal.death` | `animals/death_1.ogg`, `animals/death_2.ogg` | A dying bawl and a thud; pitched per species too |
+
+Pick recordings of a mid-sized animal (a pig or a calf) for `animal.hit` and `animal.death`, since
+they get pitched up and down from there.
 
 ## Adding a sample to an existing sound
 

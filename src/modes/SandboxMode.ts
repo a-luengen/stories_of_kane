@@ -173,7 +173,7 @@ export class SandboxMode implements GameMode {
     };
     const s = new Session(
       this.engine,
-      { world, targets, nav, npcs: map.npcs, player: this.playthrough.player, spawnHorse: false, regen: true, tutorial: this.firstSession ? TUTORIAL : null },
+      { world, targets, nav, npcs: map.npcs, animals: map.animals, player: this.playthrough.player, spawnHorse: false, regen: true, tutorial: this.firstSession ? TUTORIAL : null },
       hooks,
     );
     this.firstSession = false;

@@ -71,6 +71,8 @@ export const CONFIG = {
     acceleration: 38,
     deceleration: 30,
     mountRange: 2.6,
+    /** Seconds spent petting a dog or cat (E). */
+    petTime: 2.2,
     maxHp: 150,
     /** Health regenerates after this long without taking damage (s)... */
     regenDelay: 5,
@@ -203,6 +205,10 @@ export const CONFIG = {
     warnCooldown: 2.5,
     /** Max distance from the victim at which a defender can witness a shooting. */
     witnessRange: 12,
+    /** The same for livestock: owners keep an eye on their animals from across the yard. */
+    livestockWitnessRange: 24,
+    /** Armed NPCs within this range of an attacking animal (a wolf, a bear) shoot at it. */
+    animalFightRange: 14,
     /** The player counts as "around" while within this range and in line of sight. */
     awarenessRange: 24,
     /** Seconds the player must stay away (out of range or out of sight) for an NPC to calm down. */
@@ -265,6 +271,8 @@ export const CONFIG = {
     pivotAlignAngle: 20 * DEG,
     stopEpsilon: 0.05,
     radius: 0.75,
+    /** Wild animals can hurt (and kill) a horse: 15 wolf bites. Bullets can't. */
+    hp: 150,
     /** Fraction of the normal-component speed loss applied on collisions (1 = physical). */
     collisionSpeedLoss: 1.0,
   },

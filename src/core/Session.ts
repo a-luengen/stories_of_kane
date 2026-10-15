@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config';
-import type { NpcDef } from '../data/types';
+import type { AnimalSpawn } from '../data/animals';
+import type { NpcDef, Vec2 } from '../data/types';
 import { NavGrid } from '../ai/NavGrid';
+import { Animal, type Prey } from '../entities/Animal';
+import { AnimalSystem } from '../entities/AnimalSystem';
 import { Horse } from '../entities/Horse';
 import { MuzzleFlash } from '../entities/MuzzleFlash';
 import { Npc } from '../entities/Npc';
@@ -49,6 +52,8 @@ export interface SessionOptions {
   /** Put a horse at the map's horse spawn (default true; a playthrough brings its own). */
   spawnHorse?: boolean;
   npcs: readonly NpcDef[];
+  /** Animals of the place (none in wave mode). */
+  animals?: readonly AnimalSpawn[];
   /** Passive health regeneration. */
   regen: boolean;
   /** Controls hint shown for the first seconds. */
@@ -92,6 +97,7 @@ export class Session implements PoiRuntime {
   readonly targets: TargetSystem;
   readonly nav: NavGrid;
   readonly npcs: NpcSystem;
+  readonly animals: AnimalSystem;
   readonly ui: InventoryUI;
   readonly worldItems: WorldItemSystem;
   /** B: cover volumes, hitboxes and bullet heights. */
@@ -164,6 +170,9 @@ export class Session implements PoiRuntime {
     this.npcs = new NpcSystem(opts.npcs, this.world, this.nav, wd.cover);
     this.scene.add(this.npcs.group);
     for (const n of this.npcs.npcs) this.registerNpc(n);
+    this.animals = new AnimalSystem(opts.animals ?? [], this.world, this.nav);
+    this.animals.onBite = (a, prey, damage, push) => this.animalBite(a, prey, damage, push);
+    this.scene.add(this.animals.group);
     for (const c of wd.containers) {
       c.onOpen = (box) => {
         this.sound.lidOpen(box.kind, box.position);
@@ -177,6 +186,7 @@ export class Session implements PoiRuntime {
 
     this.sound = new SessionAudio(engine.audio, engine.rig.right);
     this.sound.setListener(this.player.pos);
+    for (const a of this.animals.animals) this.registerAnimal(a);
     // Footsteps come from the walk cycle: a sound on the surface underfoot, dust on dirt.
     this.player.model.onStep = () => {
       const p = this.player;
@@ -226,6 +236,17 @@ export class Session implements PoiRuntime {
     };
   }
 
+  /** Make an animal shootable, a pet pettable, a carcass lootable, its hooves heard. */
+  private registerAnimal(a: Animal): void {
+    this.targets.addActor(a);
+    a.onLoot = (animal) => this.openUi(() => this.ui.openLoot(animal));
+    a.onPet = (animal) => {
+      this.player.pet(animal.pos);
+      this.sound.petted(animal);
+    };
+    a.model.onStep = (_, speed01) => this.sound.animalStep(a, speed01);
+  }
+
   /** Guns a dead NPC dropped, still lying on the ground (they go when the corpse does). */
   private npcDrops = new Map<Npc, WorldItem[]>();
 
@@ -270,7 +291,8 @@ export class Session implements PoiRuntime {
   }
 
   looseHorses(): HorseState[] {
-    return this.horses.map((h) => ({ pos: [h.pos.x, h.pos.z], yaw: h.heading, saddled: h.saddled, ...(h.pen ? { pen: h.pen } : {}) }));
+    // (Horses killed by wild animals are gone next time, like the animals' carcasses.)
+    return this.horses.filter((h) => !h.dead).map((h) => ({ pos: [h.pos.x, h.pos.z], yaw: h.heading, saddled: h.saddled, ...(h.pen ? { pen: h.pen } : {}) }));
   }
 
   /** Replace the horses standing around with these (penned ones graze in their paddock). */
@@ -438,6 +460,7 @@ export class Session implements PoiRuntime {
     const interactables: Interactable[] = [
       ...this.horses,
       ...this.npcs.npcs,
+      ...this.animals.animals,
       ...this.worldItems.items,
       ...this.map.containers,
       ...(this.hooks.interactables?.() ?? []),
@@ -468,8 +491,9 @@ export class Session implements PoiRuntime {
     };
 
     const npcBodies = this.npcs.bodies;
+    const animalBodies = this.animals.bodies;
     for (const h of this.horses) {
-      const others = [...npcBodies, ...this.otherHorseColliders(h)];
+      const others = [...npcBodies, ...animalBodies, ...this.otherHorseColliders(h)];
       if (h === this.riding) {
         h.update(dt, ml > 1e-6 ? dirToYaw(mx, mz) : null, input.sprint, this.world, others);
       } else if (h.driver) {
@@ -488,7 +512,7 @@ export class Session implements PoiRuntime {
       p.mountSpeed = this.riding.motor.speed;
       p.mountYaw = this.riding.heading;
     } else {
-      p.updateMovement(dt, pin, this.world, [...this.otherHorseColliders(null), ...npcBodies]);
+      p.updateMovement(dt, pin, this.world, [...this.otherHorseColliders(null), ...npcBodies, ...animalBodies]);
     }
     this.playerCollider.x = p.pos.x;
     this.playerCollider.z = p.pos.z;
@@ -504,9 +528,11 @@ export class Session implements PoiRuntime {
       rig.addTrauma(CONFIG.shake.shotTrauma);
     }
 
-    const others = [...this.otherHorseColliders(null)];
+    const others = [...this.otherHorseColliders(null), ...animalBodies];
     if (!p.mounted && !p.dead) others.push(this.playerCollider);
     this.npcs.update(dt, p, others, (npc, s) => this.fireShot(s, npc, this.npcFlash));
+    this.animals.update(dt, [...this.horseColliders.values(), ...this.npcs.bodies, ...(p.mounted || p.dead ? [] : [this.playerCollider])], this.rushers(), p.dead ? null : [p.pos.x, p.pos.z], this.prey());
+    this.rallyAgainstAnimals();
 
     this.projectiles.update(dt, this.world, this.targets, (imp) => this.onImpact(imp), {
       pos: this.sound.ear(p),
@@ -516,12 +542,94 @@ export class Session implements PoiRuntime {
     });
     this.sound.watchGuns([p, ...this.npcs.npcs]);
     this.sound.watchHorses(dt, this.horses);
+    this.sound.watchAnimals(dt, this.animals.animals);
     this.updateDeath();
     this.targets.update(dt);
     this.particles.update(dt);
     this.flash.update(dt);
     this.npcFlash.update(dt);
     this.hooks.step?.(dt);
+  }
+
+  /** Everyone a wild animal could go for (and a stampede trample): you (or your horse), the NPCs on foot, the loose horses. */
+  private prey(): Prey[] {
+    const p = this.player;
+    const out: Prey[] = [];
+    if (!p.dead) out.push({ key: p, pos: p.pos, radius: p.mounted ? CONFIG.horse.radius : CONFIG.player.radius, crouch: p.mounted ? 0 : p.crouch });
+    for (const n of this.npcs.npcs) if (n.alive && !n.mount) out.push({ key: n, pos: n.pos, radius: CONFIG.npc.radius, crouch: n.crouch });
+    for (const h of this.horses) if (!h.dead && h !== this.riding && !h.riderNpc) out.push({ key: h, pos: h.pos, radius: CONFIG.horse.radius, crouch: 0 });
+    return out;
+  }
+
+  /**
+   * An animal is on the attack: armed NPCs close by turn their guns on it; whoever it's going for
+   * fights it (or, unarmed, runs).
+   */
+  private rallyAgainstAnimals(): void {
+    for (const a of this.animals.animals) {
+      if (!a.alive || a.mode !== 'hunt') continue;
+      for (const n of this.npcs.npcs) {
+        if (!n.alive || n.mount || n.foe === a) continue;
+        if (a.targetKey === n || (n.weaponDef && n.pos.distanceTo(a.pos) < CONFIG.npc.animalFightRange)) this.npcs.threatenedBy(n, a);
+      }
+    }
+  }
+
+  /**
+   * An animal's attack (or a stampede) landed on `prey`. You on horseback: your horse takes it.
+   * Thrown (`push`): knocked aside.
+   */
+  private animalBite(a: Animal, prey: Prey, damage: number, push: Vec2 | null): void {
+    const who = prey.key;
+    const at = new THREE.Vector3(prey.pos.x, 1, prey.pos.z);
+    const dir = new THREE.Vector3(prey.pos.x - a.pos.x, 0, prey.pos.z - a.pos.z).normalize();
+    this.particles.burst('blood', at, dir.clone().setY(0.5));
+    const shove = (pos: THREE.Vector3, r: number) => {
+      if (!push) return;
+      const pt = { x: pos.x + push[0], z: pos.z + push[1] };
+      this.world.resolveCircle(pt, r);
+      pos.x = pt.x;
+      pos.z = pt.z;
+    };
+    if (who === this.player) {
+      const p = this.player;
+      if (p.mounted && this.riding) {
+        this.hurtHorse(this.riding, damage);
+        return;
+      }
+      p.hit(at, dir, { damage, shooter: null });
+      this.sound.playerHurt();
+      this.engine.rig.addTrauma(push ? 0.6 : 0.4);
+      shove(p.pos, CONFIG.player.radius);
+    } else if (who instanceof Npc) {
+      who.hit(at, dir, { damage, shooter: null });
+      this.sound.npcHit(who, !who.alive);
+      if (!who.alive) this.hooks.onNpcDeath?.(who, false);
+      else {
+        shove(who.pos, CONFIG.npc.radius);
+        if (a.def.hunts) this.npcs.threatenedBy(who, a);
+      }
+    } else if (who instanceof Horse) {
+      this.hurtHorse(who, damage);
+      shove(who.pos, CONFIG.horse.radius);
+    }
+  }
+
+  /** A horse is hurt (or killed: you're thrown off). */
+  private hurtHorse(h: Horse, damage: number): void {
+    const died = h.hurt(damage);
+    this.sound.horseHurt(h.pos, died);
+    if (died && h === this.riding) this.dismount();
+  }
+
+  /** Whoever is rushing about (sprinting on foot, galloping): animals close by bolt from them. */
+  private rushers(): Vec2[] {
+    const p = this.player;
+    if (p.dead) return [];
+    const out: Vec2[] = [];
+    if (this.riding ? this.riding.motor.speed > CONFIG.horse.canterSpeed : p.sprinting && p.vel.lengthSq() > 4) out.push([p.pos.x, p.pos.z]);
+    for (const h of this.horses) if (h !== this.riding && h.motor.speed > CONFIG.horse.canterSpeed) out.push([h.pos.x, h.pos.z]);
+    return out;
   }
 
   /** Colliders of all horses except `skip` and the one the player rides. */
@@ -581,6 +689,7 @@ export class Session implements PoiRuntime {
 
   private fireShot(shot: ShotRequest, shooter: Player | Npc, flash: MuzzleFlash): void {
     this.sound.shot(shot);
+    this.animals.hearShot(shot.origin, shooter);
     for (const dir of shot.dirs) this.projectiles.fire(shot.origin, dir, shot.weapon, shooter);
     const d = shot.dirs[0];
     flash.trigger(shot.origin, d);
@@ -660,7 +769,8 @@ export class Session implements PoiRuntime {
   private onImpact(imp: Impact): void {
     const byPlayer = imp.shooter === this.player;
     const hitNpc = imp.target instanceof Npc ? imp.target : null;
-    const wasAlive = hitNpc?.alive ?? false;
+    const hitAnimal = imp.target instanceof Animal ? imp.target : null;
+    const wasAlive = (hitNpc ?? hitAnimal)?.alive ?? false;
     if (byPlayer) {
       if (hitNpc?.alive) this.npcs.onPlayerHitNpc(hitNpc, this.player);
       this.npcs.onPlayerShotLanded(imp.point, hitNpc);
@@ -670,6 +780,13 @@ export class Session implements PoiRuntime {
       this.sound.impact(imp, kind);
       if (imp.target === this.player) this.sound.playerHurt();
       else if (hitNpc && wasAlive) this.sound.npcHit(hitNpc, !hitNpc.alive);
+      else if (hitAnimal && wasAlive) {
+        this.sound.animalHit(hitAnimal, !hitAnimal.alive);
+        // Shooting somebody's livestock in front of them is as good as shooting at them.
+        if (byPlayer && hitAnimal.def.domestic) this.npcs.onPlayerHurtAnimal(imp.point, this.player);
+        // The wounded animal bolts away from the shot (and its herd with it) — or a wild one turns on the shooter.
+        if (hitAnimal.alive) this.animals.provoke(hitAnimal, imp.shooter, [imp.point.x - imp.dir.x * 10, imp.point.z - imp.dir.z * 10]);
+      }
       this.particles.burst(kind, imp.point, imp.dir.clone().multiplyScalar(0.6).add(imp.normal));
       if (kind !== 'blood') this.particles.burst('spark', imp.point, imp.normal, 0.5);
       if (imp.target === this.player) this.engine.rig.addTrauma(0.35);
@@ -721,6 +838,7 @@ export class Session implements PoiRuntime {
     // Flash while invulnerable.
     p.model.root.visible = p.invulnerable <= 0 || Math.floor(p.invulnerable * 12) % 2 === 0;
     for (const n of this.npcs.npcs) n.sync(alpha, animDt);
+    for (const a of this.animals.animals) a.sync(alpha, animDt);
     this.projectiles.sync(alpha);
     this.worldItems.update(animDt);
     this.map.update?.(animDt);

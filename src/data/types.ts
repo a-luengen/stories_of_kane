@@ -101,7 +101,8 @@ export interface AppearanceConfig {
 
 // ------------------------------------------------------------------------------------ items
 
-export type ItemCategory = 'weapon' | 'ammo' | 'clothing' | 'consumable' | 'map';
+/** `goods`: things to sell (meat, hides and feathers from animals). */
+export type ItemCategory = 'weapon' | 'ammo' | 'clothing' | 'consumable' | 'map' | 'goods';
 
 export interface ItemDef {
   id: string;
@@ -124,6 +125,8 @@ export interface ItemDef {
   heal?: { fraction: number; duration: number };
   /** Map scraps: studying it (right-click) puts this POI on the world map; the scrap is used up. */
   reveals?: string;
+  /** What a merchant would charge for one (they pay `ECONOMY.sellFraction` of it), for items no shop stocks. */
+  value?: number;
 }
 
 /** Inventory entry in NPC data: an item id and optional quantity. */

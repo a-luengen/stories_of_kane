@@ -74,7 +74,7 @@ export interface WorldDef {
 
 // ------------------------------------------------------------------------------------------------
 
-/** The sandbox frontier: a town, a ranch to the north and a canyon to the east. */
+/** The sandbox frontier: a town, a ranch to the north, a canyon to the east, wild plains west of the ranch. */
 export const SANDBOX_WORLD: WorldDef = {
   mode: 'sandbox',
   size: [320, 200],
@@ -108,6 +108,8 @@ export const SANDBOX_WORLD: WorldDef = {
         { id: 'south', at: [0, 37], half: [3.5, 2.5], arrive: [0, 33.5], facing: Math.PI },
         // The unmarked canyon trail.
         { id: 'east', at: [37, -10], half: [2.5, 3.5], arrive: [33.5, -10], facing: -Math.PI / 2 },
+        // Out west, behind the house, to the plains.
+        { id: 'west', at: [-37, -26], half: [2.5, 3.5], arrive: [-33.5, -26], facing: Math.PI / 2 },
       ],
     },
     {
@@ -122,6 +124,16 @@ export const SANDBOX_WORLD: WorldDef = {
         { id: 'west', at: [-37, 0], half: [2.5, 3.5], arrive: [-33.5, 0], facing: Math.PI / 2 },
         { id: 'north', at: [10, -37], half: [3.5, 2.5], arrive: [10, -33.5], facing: 0 },
       ],
+    },
+    {
+      id: 'desert-plains',
+      name: 'Desert Plains',
+      type: 'prairie',
+      pos: [70, 70],
+      map: 'desert-plains',
+      start: 'hidden',
+      description: 'Dry open plains west of the ranch. Bison graze there; wolves and a grizzly hunt them.',
+      exits: [{ id: 'east', at: [37, 0], half: [2.5, 3.5], arrive: [33.5, 0], facing: -Math.PI / 2 }],
     },
   ],
   paths: [
@@ -146,6 +158,13 @@ export const SANDBOX_WORLD: WorldDef = {
       route: [[128, 46], [160, 42], [196, 52], [222, 66], [244, 80], [252, 96]],
       start: 'undiscovered',
     },
+    {
+      id: 'ranch-plains',
+      from: { poi: 'two-spurs-ranch', exit: 'west' },
+      to: { poi: 'desert-plains', exit: 'east' },
+      route: [[128, 46], [112, 52], [92, 60], [70, 70]],
+      start: 'hidden',
+    },
   ],
   terrain: [
     // Mountains along the north edge.
@@ -160,6 +179,8 @@ export const SANDBOX_WORLD: WorldDef = {
     { kind: 'canyon', points: [[232, 70], [292, 66], [300, 112], [272, 128], [236, 120], [226, 96]] },
     // Desert to the south.
     { kind: 'desert', points: [[0, 140], [90, 130], [180, 142], [260, 136], [320, 150], [320, 200], [0, 200]] },
+    // The dry Desert Plains west of the ranch.
+    { kind: 'desert', points: [[50, 60], [90, 58], [98, 70], [86, 82], [56, 82], [46, 72]] },
     // The river along the prairie, a stream from the hills, a small lake.
     { kind: 'river', width: 5, points: [[0, 92], [40, 86], [72, 92], [100, 80], [118, 66], [150, 60], [186, 66], [212, 58], [238, 30], [250, 0]] },
     { kind: 'stream', width: 2, points: [[96, 30], [106, 46], [112, 58], [118, 66]] },

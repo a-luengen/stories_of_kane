@@ -30,6 +30,8 @@ export class Horse implements Interactable {
   pen: [number, number, number, number] | null = null;
   /** 0..1: head down, grazing. */
   graze = 0;
+  /** Only wild animals hurt horses (bites, a grizzly's swipe). */
+  hp = CONFIG.horse.hp;
   /** Interpolated render yaw (heading changes from collisions are smoothed visually). */
   private renderYaw = 0;
   /** Last collision contact this step (for debug). */
@@ -39,8 +41,23 @@ export class Horse implements Interactable {
     return this.pos;
   }
 
+  get dead(): boolean {
+    return this.hp <= 0;
+  }
+
+  /** Bitten, mauled. Returns true if that killed it (it goes down where it stands). */
+  hurt(damage: number): boolean {
+    if (this.dead) return false;
+    this.hp = Math.max(0, this.hp - damage);
+    if (!this.dead) return false;
+    this.driver = null;
+    this.motor.speed = 0;
+    this.graze = 0;
+    return true;
+  }
+
   canInteract(): boolean {
-    return this.canMount();
+    return !this.dead && this.canMount();
   }
 
   interact(): void {
@@ -68,6 +85,7 @@ export class Horse implements Interactable {
   update(dt: number, target: number | null, gallop: boolean, world: CollisionWorld, dynamic?: readonly CircleCollider[], cap = Infinity): void {
     this.prevPos.copy(this.pos);
     this.prevHeading = this.motor.heading;
+    if (this.dead) return;
     this.motor.update(target, gallop, dt, cap);
 
     const m = this.motor;
@@ -96,6 +114,7 @@ export class Horse implements Interactable {
       pivoting: m.mode === 'pivoting',
       ridden: this.ridden,
       graze: this.graze,
+      dead: this.dead,
     });
   }
 

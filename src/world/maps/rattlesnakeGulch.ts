@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { banditAppearance, ENEMIES, type ArchetypeId } from '../../data/enemies';
+import type { AnimalSpawn } from '../../data/animals';
 import type { NpcDef, Vec2 } from '../../data/types';
 import type { ExitDef } from '../../data/world';
 import type { TargetSystem } from '../../entities/Targets';
@@ -357,3 +358,6 @@ export const GULCH_NPCS: NpcDef[] = [
   outlaw('outlaw-rifle', 'rifleman', [CAMP[0] + 6, CAMP[1] - 9], { kind: 'idle', at: [CAMP[0] + 6, CAMP[1] - 9], facing: -2.2 }, 13),
   outlaw('outlaw-shotgun', 'shotgunner', [CAMP[0] + 3, CAMP[1] + 7], { kind: 'idle', at: [CAMP[0] + 3, CAMP[1] + 7], facing: -1.4 }, 14),
 ];
+
+/** The gulch's namesake: one rattlesnake in the rocks at the south-west end of the basin, away from the camp. */
+export const GULCH_ANIMALS: AnimalSpawn[] = [{ species: 'snake', at: [-8, 16], yaw: 2.2, roam: 3 }];

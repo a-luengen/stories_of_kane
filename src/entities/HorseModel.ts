@@ -13,6 +13,8 @@ export interface HorsePose {
   ridden: boolean;
   /** 0..1: head down to the grass. */
   graze?: number;
+  /** Killed: it goes down on its side. */
+  dead?: boolean;
 }
 
 const HIP_Y = 1.02;
@@ -32,28 +34,28 @@ interface Leg {
 }
 
 /** Low-poly ellipsoid (flat shading keeps it faceted but rounded). */
-function ellip(rx: number, ry: number, rz: number, w = 8, h = 6): THREE.BufferGeometry {
+export function ellip(rx: number, ry: number, rz: number, w = 8, h = 6): THREE.BufferGeometry {
   const g = new THREE.SphereGeometry(1, w, h);
   g.scale(rx, ry, rz);
   return g;
 }
 
 /** Tapered cylinder along Y, pivot at the anchor (0 = centre, 1 = top, -1 = bottom). */
-function taper(rTop: number, rBot: number, h: number, anchorY = 0, seg = 7): THREE.BufferGeometry {
+export function taper(rTop: number, rBot: number, h: number, anchorY = 0, seg = 7): THREE.BufferGeometry {
   const g = new THREE.CylinderGeometry(rTop, rBot, h, seg);
   if (anchorY !== 0) g.translate(0, (-anchorY * h) / 2, 0);
   return g;
 }
 
 /** Tapered cylinder along Z, centred, narrow end (rFront) towards +Z. */
-function taperZ(rFront: number, rBack: number, len: number, open = false): THREE.BufferGeometry {
+export function taperZ(rFront: number, rBack: number, len: number, open = false): THREE.BufferGeometry {
   const g = new THREE.CylinderGeometry(rFront, rBack, len, 8, 1, open);
   g.rotateX(Math.PI / 2);
   return g;
 }
 
 /** Capsule along Z (`len` = straight section between the caps). */
-function capsuleZ(r: number, len: number): THREE.BufferGeometry {
+export function capsuleZ(r: number, len: number): THREE.BufferGeometry {
   const g = new THREE.CapsuleGeometry(r, len, 3, 8);
   g.rotateX(Math.PI / 2);
   return g;
@@ -79,6 +81,7 @@ export class HorseModel {
   private rear = 0;
   private rearHold = 0;
   private lean = 0;
+  private fall = 0;
   /** Called once per stride beat at speed (for hoof dust). */
   onFootfall: ((localX: number, localZ: number) => void) | null = null;
   /** A hoof landed: leg index (0-1 front, 2-3 hind) and the gait speed (0 walk … 1 gallop). */
@@ -168,6 +171,8 @@ export class HorseModel {
   }
 
   animate(dt: number, p: HorsePose): void {
+    // Dead and down: it lies still (no breathing, nodding or tail swishing).
+    if (p.dead && this.fall >= 1) return;
     this.time += dt;
     const s = clamp(p.speed / p.gallopSpeed, 0, 1);
     const pivotMotion = p.pivoting ? Math.min(1, Math.abs(p.angularVelocity) * 0.5) : 0;
@@ -222,7 +227,11 @@ export class HorseModel {
     // Lean into turns (roll towards the inside, proportional to centripetal accel).
     const targetLean = clamp(-p.angularVelocity * p.speed * 0.022, -0.28, 0.28);
     this.lean = damp(this.lean, targetLean, 6, dt);
-    this.root.rotation.z = this.lean;
+    // Dead: down on its side (lifted by half its girth so it lies on the ground, not in it).
+    this.fall = p.dead ? Math.min(1, this.fall + dt * 1.8) : 0;
+    const k = this.fall * this.fall;
+    this.root.rotation.z = this.lean - k * (Math.PI / 2);
+    this.root.position.y = k * 0.35;
 
     // Head: forward at speed, up when rearing, idle sway. In the gallop the head and neck counter the
     // forelegs: thrown back while the front feet reach forward, stretched out as they sweep back.

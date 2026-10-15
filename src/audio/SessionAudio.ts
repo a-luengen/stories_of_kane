@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../config';
 import { SOUNDS, type SoundDef } from '../data/sounds';
 import type { WeaponDef } from '../data/types';
+import type { Animal } from '../entities/Animal';
 import type { Npc } from '../entities/Npc';
 import type { BurstKind } from '../entities/Particles';
 import type { Player } from '../entities/Player';
@@ -49,6 +50,7 @@ const GAIT: Record<Gait, { volume: number; pitch: number; lowpass?: number }> = 
 interface HorseLike {
   readonly pos: THREE.Vector3;
   readonly motor: { speed: number };
+  readonly dead?: boolean;
 }
 
 /** Who carries a gun that can be drawn and reloaded (player or NPC). */
@@ -74,6 +76,8 @@ export class SessionAudio {
   private talking = new WeakMap<object, Voice>();
   /** Seconds until each standing horse snorts (or whinnies). */
   private idleHorse = new WeakMap<object, number>();
+  /** Per animal: seconds until it calls, what it was doing last step, and when it last warned. */
+  private animalCalls = new WeakMap<Animal, { left: number; fleeing: boolean; watching: boolean; warnLeft: number; bites: number }>();
 
   constructor(
     private audio: AudioEngine,
@@ -251,6 +255,7 @@ export class SessionAudio {
   /** Each step: horses standing around snort now and then (rarely whinny). */
   watchHorses(dt: number, horses: Iterable<HorseLike>): void {
     for (const h of horses) {
+      if (h.dead) continue;
       let t = this.idleHorse.get(h) ?? 4 + Math.random() * 12;
       if (h.motor.speed < 0.3) t -= dt;
       if (t <= 0) {
@@ -259,6 +264,69 @@ export class SessionAudio {
       }
       this.idleHorse.set(h, t);
     }
+  }
+
+  /**
+   * Each step: animals call now and then (moo, oink, cluck, bark, meow, howl), cry out as they take
+   * fright (a herd's stampede rumbles), a dog often barks at whoever walks up, and wild ones warn
+   * (growl, roar, rattle) and attack (bite, swipe, strike) — read off their state, like the guns.
+   */
+  watchAnimals(dt: number, animals: Iterable<Animal>): void {
+    for (const a of animals) {
+      if (!a.alive) continue;
+      const [lo, hi] = a.def.sounds.interval;
+      let s = this.animalCalls.get(a);
+      if (!s) {
+        s = { left: lo + Math.random() * (hi - lo), fleeing: false, watching: false, warnLeft: 0, bites: a.bites };
+        this.animalCalls.set(a, s);
+      }
+      const snd = a.def.sounds;
+      const fleeing = a.mode === 'flee';
+      if (fleeing && !s.fleeing && snd.stampede) this.audio.play(snd.stampede, { pos: a.pos });
+      // Wild ones: a warning as they notice someone (repeated, for a snake's rattle), the attack as it lands.
+      const warning = a.mode === 'alert' || (a.mode === 'hunt' && snd.alertEvery !== undefined);
+      s.warnLeft -= dt;
+      if (snd.alert && warning && (!s.watching || (snd.alertEvery !== undefined && s.warnLeft <= 0))) {
+        this.audio.play(snd.alert, { pos: a.pos });
+        s.warnLeft = snd.alertEvery ?? 0;
+      }
+      if (snd.attack && a.bites > s.bites) this.audio.play(snd.attack, { pos: a.pos });
+      s.bites = a.bites;
+      // Only someone walking up counts (not being petted); wild ones warn instead.
+      const watching = a.def.hunts ? warning : a.lookAt !== null && a.petLeft <= 0;
+      s.left -= dt;
+      const startled = fleeing && !s.fleeing && !a.def.hunts && Math.random() < 0.7;
+      const greets = watching && !s.watching && !a.def.hunts && Math.random() < 0.5;
+      if (startled || greets || s.left <= 0) {
+        this.audio.play(a.def.sounds.call, { pos: a.pos, pitch: fleeing ? 1.15 : 1, delay: fleeing ? Math.random() * 0.3 : 0 });
+        s.left = lo + Math.random() * (hi - lo);
+      }
+      s.fleeing = fleeing;
+      s.watching = watching;
+    }
+  }
+
+  /** A pet is being petted: a cat purrs (a dog just wags). */
+  petted(a: Animal): void {
+    if (a.def.sounds.pet) this.audio.play(a.def.sounds.pet, { pos: a.pos });
+  }
+
+  /** An animal was shot: a squeal (a wolf's yelp), or its death, pitched for its size. */
+  animalHit(a: Animal, died: boolean): void {
+    const hurt = a.def.sounds.hurt;
+    if (hurt && !died) this.audio.play(hurt, { pos: a.pos });
+    else this.audio.play(died ? 'animal.death' : 'animal.hit', { pos: a.pos, pitch: a.def.sounds.pitch });
+  }
+
+  /** A horse bitten (a squeal), or brought down. */
+  horseHurt(pos: THREE.Vector3, died: boolean): void {
+    this.audio.play(died ? 'animal.death' : 'horse.whinny', { pos, pitch: died ? 0.6 : 1.15 });
+  }
+
+  /** A hoof landed (cows and pigs; chickens are too light to hear). */
+  animalStep(a: Animal, speed01: number): void {
+    const v = a.def.sounds.step;
+    if (v > 0) this.audio.play('hoof.dirt', { pos: a.pos, volume: v * (0.5 + 0.7 * speed01), pitch: 1.1 + (1 - v) * 0.4 });
   }
 
   /** The player's ear (for whizzes): head height, on foot or in the saddle. */

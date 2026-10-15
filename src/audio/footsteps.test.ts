@@ -43,7 +43,7 @@ describe('steps from the walk cycle', () => {
   });
 
   const pose = (speed: number, sprint: boolean, crouch = 0): PlayerPose => ({
-    speed, sprint, moveYaw: 0, aimYaw: 0, recoil: 0, recoilL: 0, dual: false, reload: -1, mounted: false, horseYaw: 0, dead: false, draw: 0, active: null, crouch, longGun: false,
+    speed, sprint, moveYaw: 0, aimYaw: 0, recoil: 0, recoilL: 0, dual: false, reload: -1, mounted: false, horseYaw: 0, dead: false, draw: 0, active: null, crouch, longGun: false, pet: 0,
   });
   const stepsPerSecond = (p: PlayerPose) => {
     const m = new PlayerModel(PLAYER_APPEARANCE);

@@ -1,3 +1,4 @@
+import type { AnimalSpawn } from '../data/animals';
 import type { NpcDef } from '../data/types';
 import type { ExitDef } from '../data/world';
 import type { TargetSystem } from '../entities/Targets';
@@ -14,6 +15,8 @@ export interface PoiMap {
   npcs: readonly NpcDef[];
   /** Horses of the place (put out on the first visit; afterwards they're part of its saved state). */
   horses?: readonly HorseState[];
+  /** Its animals (back at their spawn points on every visit). */
+  animals?: readonly AnimalSpawn[];
 }
 
 /**
@@ -22,16 +25,20 @@ export interface PoiMap {
  */
 export const POI_MAPS: Record<string, () => Promise<PoiMap>> = {
   'kanes-crossing': async () => {
-    const [{ buildSandboxMap }, { NPCS }] = await Promise.all([import('./maps/sandbox'), import('../data/npcs')]);
-    return { build: buildSandboxMap, npcs: NPCS };
+    const [{ buildSandboxMap, TOWN_ANIMALS }, { NPCS }] = await Promise.all([import('./maps/sandbox'), import('../data/npcs')]);
+    return { build: buildSandboxMap, npcs: NPCS, animals: TOWN_ANIMALS };
   },
   'two-spurs-ranch': async () => {
     const m = await import('./maps/twoSpursRanch');
-    return { build: m.buildRanchMap, npcs: m.RANCH_NPCS, horses: m.RANCH_HORSES };
+    return { build: m.buildRanchMap, npcs: m.RANCH_NPCS, horses: m.RANCH_HORSES, animals: m.RANCH_ANIMALS };
   },
   'rattlesnake-gulch': async () => {
     const m = await import('./maps/rattlesnakeGulch');
-    return { build: m.buildGulchMap, npcs: m.GULCH_NPCS };
+    return { build: m.buildGulchMap, npcs: m.GULCH_NPCS, animals: m.GULCH_ANIMALS };
+  },
+  'desert-plains': async () => {
+    const m = await import('./maps/desertPlains');
+    return { build: m.buildPlainsMap, npcs: [], animals: m.PLAINS_ANIMALS };
   },
 };
 

@@ -64,7 +64,8 @@ export const MERCHANT_SHOPS: Record<string, MerchantShop> = {
       { item: 'ammo_shells', price: 14, quantity: 6, unlockWave: 1 },
       { item: 'bandage', price: 20, quantity: 1, unlockWave: 1 },
     ],
-    buys: ['weapon', 'ammo', 'consumable'],
+    // The gunsmith runs the trading post too: he takes meat, hides and feathers.
+    buys: ['weapon', 'ammo', 'consumable', 'goods'],
   },
   tailor: {
     title: 'CLOTHIER',

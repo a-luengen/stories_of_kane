@@ -174,17 +174,18 @@ export class Playthrough {
     const ridden = from.riding;
     if (ridden && ridden !== this.horse) {
       const old = this.horse;
-      if (!from.horses.includes(old) && this.horseAt) this.snapshots.get(this.horseAt.poi)?.horses.push({ pos: this.horseAt.pos, yaw: this.horseAt.yaw });
+      if (!old.dead && !from.horses.includes(old) && this.horseAt) this.snapshots.get(this.horseAt.poi)?.horses.push({ pos: this.horseAt.pos, yaw: this.horseAt.yaw });
       this.horse = ridden;
       this.horseAt = null;
     }
-    // The horse: along if ridden or close by, otherwise it waits here.
+    // The horse: along if ridden or close by, otherwise it waits here. Killed (by wolves, a bear): it's gone.
     const riding = from.riding === this.horse;
     let horseComes = false;
     if (from.horses.includes(this.horse)) {
       const near = exit ?? { at: [this.player.pos.x, this.player.pos.z], half: [0, 0], arrive: [0, 0], facing: 0, id: '' };
-      horseComes = horseTravels(riding, this.horse.pos, near as ExitDef);
-      if (!horseComes) this.horseAt = { poi: here.id, pos: [this.horse.pos.x, this.horse.pos.z], yaw: this.horse.heading };
+      horseComes = !this.horse.dead && horseTravels(riding, this.horse.pos, near as ExitDef);
+      if (this.horse.dead) this.horseAt = null;
+      else if (!horseComes) this.horseAt = { poi: here.id, pos: [this.horse.pos.x, this.horse.pos.z], yaw: this.horse.heading };
       from.detachHorse(this.horse); // (dismounts first)
     }
     if (horseComes) this.horseAt = null;

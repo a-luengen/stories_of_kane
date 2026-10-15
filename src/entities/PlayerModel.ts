@@ -33,6 +33,8 @@ export interface PlayerPose {
   crouch: number;
   /** The active weapon is a two-handed long gun. */
   longGun: boolean;
+  /** 0..1: petting a dog or cat (the gun hand reaches down and strokes). */
+  pet: number;
 }
 
 /**
@@ -165,6 +167,12 @@ export class PlayerModel {
     // Arms hang from the leaning torso: take the crouch lean back out of the aim.
     const lean = p.mounted ? 0 : CROUCH_LEAN * p.crouch;
     if (p.draw > 0.5) armPitch -= lean;
+    if (p.pet > 0) {
+      // Reaching down in front and stroking back and forth.
+      armPitch = lerp(armPitch, -(0.7 + lean * 0.5) + Math.sin(this.time * 7) * 0.18, p.pet);
+      armRoll = lerp(armRoll, 0.08, p.pet);
+      armYaw = lerp(armYaw, -0.15, p.pet);
+    }
     armR.rotation.x = damp(armR.rotation.x, armPitch, reloading ? 14 : drawing ? 24 : 40, dt);
     armR.rotation.z = damp(armR.rotation.z, armRoll, 14, dt);
     armR.rotation.y = armYaw;
@@ -214,7 +222,7 @@ export class PlayerModel {
       upper.rotation.y += twist;
       this.rig.holdLongGun(gun, this.hold, LONG_GUN_TWIST);
     } else if (gun) gun.rotation.set(0, 0, gun.rotation.z);
-    head.rotation.x = -p.recoil * 0.1 - lean * 0.8;
+    head.rotation.x = -p.recoil * 0.1 - lean * 0.8 + p.pet * 0.35;
     // The head turns the rest of the way to the aim (when holstered the torso only half-follows).
     const aimRel = p.mounted ? angleDelta(p.horseYaw, p.aimYaw) : p.aimYaw;
     head.rotation.y = damp(head.rotation.y, clamp(angleDelta(this.upperYaw + twist, aimRel), -0.7, 0.7), 10, dt);

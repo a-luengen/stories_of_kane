@@ -44,6 +44,8 @@ export interface PlayerView {
   readonly dead: boolean;
   /** 0 = standing … 1 = crouched (lower chest). */
   readonly crouch?: number;
+  /** Height to aim at, if not a person's chest (an animal). */
+  readonly chestY?: number;
 }
 
 export interface NpcContext {
@@ -66,6 +68,7 @@ export function randomName(body: 'male' | 'female'): string {
 
 /** Player chest point (what NPCs aim at and look for). */
 export function playerChest(p: PlayerView, out = new THREE.Vector3()): THREE.Vector3 {
+  if (p.chestY !== undefined) return out.set(p.pos.x, p.chestY, p.pos.z);
   const h = p.mounted ? 2.2 : CONFIG.npc.chestHeight * (1 - (1 - CONFIG.player.crouch.hitboxScale) * (p.crouch ?? 0));
   return out.set(p.pos.x, h, p.pos.z);
 }
@@ -249,6 +252,12 @@ export class Npc implements Target, Interactable {
   /** Shots landed nearby while holding a camp (the camp turns hostile on its next update). */
   alarmed = false;
 
+  /**
+   * Someone other than the player this NPC is up against (a wolf going for it): it fights or flees
+   * them exactly as it would the player, until they're dead or it calms down.
+   */
+  foe: PlayerView | null = null;
+
   /** Gun out (or coming out). */
   get drawn(): boolean {
     return this.drawTarget === 1;
@@ -375,6 +384,7 @@ export class Npc implements Target, Interactable {
 
   /** Back to the routine (weapon put away). */
   calmDown(silent = false): void {
+    this.foe = null;
     if (!this.alive || this.mode === 'routine') return;
     this.mode = 'routine';
     this.drawTarget = 0;
@@ -551,6 +561,9 @@ export class Npc implements Target, Interactable {
   // ---------------------------------------------------------------- simulation
 
   step(dt: number, ctx: NpcContext): void {
+    // Up against an animal: it takes the player's place in this NPC's eyes; once it's dead, stand down.
+    if (this.foe?.dead) this.calmDown();
+    if (this.foe) ctx = { ...ctx, player: this.foe };
     this.prevPos.copy(this.pos);
     this.speechLeft -= dt;
     if (this.speechLeft <= 0) this.speech = null;

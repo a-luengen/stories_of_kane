@@ -24,6 +24,7 @@ import {
   type WorldData,
 } from '../props';
 import type { ExitDef } from '../../data/world';
+import type { AnimalSpawn } from '../../data/animals';
 
 const HALF = CONFIG.world.size / 2;
 
@@ -176,6 +177,21 @@ export function buildSandboxMap(targets: TargetSystem, exits: readonly ExitDef[]
 }
 
 // ------------------------------------------------------------------------------------------------
+
+/**
+ * The town's pets: dogs roaming the main street and the corner by the side street, cats keeping to
+ * the porches (each by a barrel, where the sun is warm). And a rattlesnake out in the desert
+ * south-east of town.
+ */
+export const TOWN_ANIMALS: AnimalSpawn[] = [
+  { species: 'dog', at: [-10, 1.5], yaw: 1.2, roam: 9 },
+  { species: 'dog', at: [14, -1.5], yaw: -2, roam: 9 },
+  { species: 'dog', at: [-15.5, -1], yaw: 0.3, roam: 5 },
+  { species: 'cat', at: [-8.9, -5.2], yaw: 0.4, roam: 2.5 },
+  { species: 'cat', at: [12, 6.6], yaw: 2.8, roam: 2.5 },
+  { species: 'cat', at: [-16.3, 10.6], yaw: 1.6, roam: 2.5 },
+  { species: 'snake', at: [30, 26], yaw: 0.8, roam: 3 },
+];
 
 const tileCache = new Map<string, number>();
 function groundColor(x: number, z: number, rng: Rng, first: boolean): number {

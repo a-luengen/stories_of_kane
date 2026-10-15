@@ -80,16 +80,16 @@ export class Economy {
     return { ok: true, item };
   }
 
-  /** What the merchant pays for an item (half the price; ammo per round). */
+  /** What the merchant pays for an item (half the price; ammo per round, goods per piece). */
   sellValue(item: ItemInstance): number {
     const def = itemDef(item.defId);
     const e = this.entry(item.defId);
     const f = ECONOMY.sellFraction;
     if (def.stackable) {
-      const perUnit = e ? e.price / e.quantity : ECONOMY.fallbackPrice[def.category] / Math.max(1, def.boxQuantity ?? 1);
+      const perUnit = e ? e.price / e.quantity : (def.value ?? ECONOMY.fallbackPrice[def.category] / Math.max(1, def.boxQuantity ?? 1));
       return Math.floor(perUnit * item.quantity * f);
     }
-    return Math.floor((e?.price ?? ECONOMY.fallbackPrice[def.category]) * f);
+    return Math.floor((e?.price ?? def.value ?? ECONOMY.fallbackPrice[def.category]) * f);
   }
 
   /** Sell an item (the caller removes it from where it was). Returns the dollars received. */

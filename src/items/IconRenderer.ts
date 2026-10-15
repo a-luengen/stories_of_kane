@@ -1,16 +1,25 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config';
+import { GUN_SPRITES, type GunSpriteDefinition } from '../data/gunSprites';
 import { ITEMS } from '../data/items';
 import { pixelsToOutlinedCanvas } from '../render/pixelCanvas';
 import { itemDef } from './ItemDef';
 import { buildItemMesh } from './itemMeshes';
+import { drawSprite, spriteInSheet, SpriteSheets } from './spriteIcon';
 
 /**
  * Renders each item's procedural mesh to a small offscreen canvas in the game's pixel style
  * (toon shading at low resolution, nearest sampling, 1px dark outline). Cached per size.
+ *
+ * Guns with a hand-drawn sprite (data/gunSprites.ts) use it instead, scaled to the icon. Until its
+ * sheet has loaded — or if it can't be — the rendered icon stands in; the sprite is then drawn into
+ * that same canvas, so whoever holds it sees the change.
  */
 export class IconRenderer {
   private cache = new Map<string, HTMLCanvasElement>();
+  private sheets = new SpriteSheets();
+  /** Sprites already found to lie outside their sheet (warned about once). */
+  private badSprites = new Set<string>();
   private scene = new THREE.Scene();
   private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 50);
 
@@ -32,10 +41,40 @@ export class IconRenderer {
     const key = `${defId}@${pxPerCell}`;
     let c = this.cache.get(key);
     if (!c) {
-      c = this.render(defId, pxPerCell);
+      c = this.make(defId, pxPerCell);
       this.cache.set(key, c);
     }
     return c;
+  }
+
+  /** The sprite if its sheet is in; otherwise the rendered icon (redrawn as the sprite once the sheet arrives). */
+  private make(defId: string, px: number): HTMLCanvasElement {
+    const sprite = GUN_SPRITES[defId];
+    if (!sprite) return this.render(defId, px);
+    const sheet = this.sheets.ready.get(sprite.sheetPath);
+    if (sheet && this.fits(defId, sprite, sheet)) {
+      const def = itemDef(defId);
+      const c = document.createElement('canvas');
+      c.width = def.size.w * px;
+      c.height = def.size.h * px;
+      drawSprite(c, sheet, sprite);
+      return c;
+    }
+    const c = this.render(defId, px);
+    void this.sheets.load(sprite.sheetPath).then((img) => {
+      if (img && this.fits(defId, sprite, img)) drawSprite(c, img, sprite);
+    });
+    return c;
+  }
+
+  /** The sprite's rectangle lies inside its sheet (warns once if not: the rendered icon stays). */
+  private fits(defId: string, s: GunSpriteDefinition, sheet: HTMLImageElement): boolean {
+    if (spriteInSheet(s, sheet.naturalWidth, sheet.naturalHeight)) return true;
+    if (!this.badSprites.has(defId)) {
+      this.badSprites.add(defId);
+      console.warn(`[icons] sprite for "${defId}" lies outside "${s.sheetPath}" (${sheet.naturalWidth}x${sheet.naturalHeight}): using the rendered icon`);
+    }
+    return false;
   }
 
   private render(defId: string, px: number): HTMLCanvasElement {

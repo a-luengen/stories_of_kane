@@ -1,6 +1,6 @@
 import type { Session } from '../core/Session';
 
-export type ModeKind = 'sandbox' | 'wave';
+export type ModeKind = 'sandbox' | 'wave' | 'story';
 
 /** End-of-run numbers for the Game Over screen. */
 export interface RunStats {

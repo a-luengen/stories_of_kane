@@ -108,8 +108,8 @@ export class Dialog {
   ) {}
 
   private rect(W: number, H: number): Rect {
-    const w = 170;
-    const h = 26 + wrapText(this.text.toUpperCase(), 38).length * 7 + 20;
+    const w = Math.max(170, this.items.length * 66 + 14);
+    const h = 26 + wrapText(this.text.toUpperCase(), Math.floor((w - 18) / 4)).length * 7 + 20;
     return { x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), w, h };
   }
 
@@ -140,7 +140,7 @@ export class Dialog {
   draw(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     const r = this.rect(W, H);
     drawPanel(ctx, r, this.title);
-    wrapText(this.text.toUpperCase(), 38).forEach((l, i) => drawText(ctx, l, r.x + Math.round((r.w - textWidth(l)) / 2), r.y + 12 + i * 7, UI.cream));
+    wrapText(this.text.toUpperCase(), Math.floor((r.w - 18) / 4)).forEach((l, i) => drawText(ctx, l, r.x + Math.round((r.w - textWidth(l)) / 2), r.y + 12 + i * 7, UI.cream));
     this.items.forEach((item, i) => {
       const b = this.buttons[i];
       if (!b) return;

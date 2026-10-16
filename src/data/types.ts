@@ -101,8 +101,8 @@ export interface AppearanceConfig {
 
 // ------------------------------------------------------------------------------------ items
 
-/** `goods`: things to sell (meat, hides and feathers from animals). */
-export type ItemCategory = 'weapon' | 'ammo' | 'clothing' | 'consumable' | 'map' | 'goods';
+/** `goods`: things to sell (meat, hides and feathers from animals); `quest`: items from quest packs. */
+export type ItemCategory = 'weapon' | 'ammo' | 'clothing' | 'consumable' | 'map' | 'goods' | 'quest';
 
 export interface ItemDef {
   id: string;
@@ -127,6 +127,17 @@ export interface ItemDef {
   reveals?: string;
   /** What a merchant would charge for one (they pay `ECONOMY.sellFraction` of it), for items no shop stocks. */
   value?: number;
+  /** Items from a quest pack (registered when the pack loads). */
+  quest?: {
+    id: string;
+    shape: string;
+    colors?: { main?: string; accent?: string };
+    /** URL of the pack's PNG icon. */
+    iconUrl?: string;
+    /** Can't be sold; dropping it asks first; removed when the quest ends (unless `keepAfterQuest`). */
+    questItem: boolean;
+    keepAfterQuest: boolean;
+  };
 }
 
 /** Inventory entry in NPC data: an item id and optional quantity. */
@@ -197,4 +208,6 @@ export interface NpcDef {
    * (instead of a greeting), and that place goes on your map.
    */
   hints?: { poi: string; line: string }[];
+  /** Spawned by this quest (despawns when it ends; stored with its POI's state). */
+  questId?: string;
 }

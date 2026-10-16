@@ -102,9 +102,11 @@ export function buildSandboxMap(targets: TargetSystem, exits: readonly ExitDef[]
     ['ammoBox', 28.4, 3.2, Math.PI / 2],
   ];
   for (const [kind, x, z, yaw] of extra) {
-    const c = containers.add(cw, kind, x, z, yaw);
-    // The chest on the porch across the street holds a scrap of a map to the gulch.
-    if (kind === 'chest' && x === -3.2) c.extras.push('map_scrap_gulch');
+    // The chest on the porch across the street (quests call it `kanes-crossing:chest-porch`) holds a
+    // scrap of a map to the gulch.
+    const porch = kind === 'chest' && x === -3.2;
+    const c = containers.add(cw, kind, x, z, yaw, undefined, porch ? 'chest-porch' : undefined);
+    if (porch) c.extras.push('map_scrap_gulch');
   }
   for (const c of containers.items) group.add(c.object);
   // Fence lines on the camera side of the street.

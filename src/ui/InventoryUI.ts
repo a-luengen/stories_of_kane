@@ -27,6 +27,8 @@ import { lootLayout } from './LootPanel';
 import { drawStockTile, drawWallet, shopLayout, type ShopHost } from './ShopPanel';
 import type { ShopEntry } from '../data/shop';
 import { drawText, textWidth } from './PixelFont';
+import { Dialog } from './menuWidgets';
+import { JournalPanel, type JournalHost } from './JournalPanel';
 import { UI } from './theme';
 import {
   drawButton,
@@ -70,6 +72,8 @@ export interface InventoryHost {
   /** Spawn the item on the ground next to the player. */
   dropToWorld(item: ItemInstance): void;
   toast(text: string): void;
+  /** The quest journal (the QUESTS tab); none in wave mode. */
+  journal?: JournalHost;
   /** Right-click: use a consumable or study a map scrap (lying in `from`). Returns why not, or null. */
   useItem?(item: ItemInstance, from: GridContainer): string | null;
 }
@@ -115,6 +119,12 @@ export class InventoryUI {
   private lastClick: { key: object; t: number } | null = null;
   /** A grid flashes red when something doesn't fit into it. */
   private flash: { grid: GridContainer; left: number } | null = null;
+  /** "Drop the quest item?" (it may fail the quest). */
+  private confirm: Dialog | null = null;
+  /** The inventory screen's tabs (with a journal): INVENTORY | QUESTS. */
+  tab: 'inventory' | 'quests' = 'inventory';
+  private journal: JournalPanel | null = null;
+  private tabRects: { tab: 'inventory' | 'quests'; r: Rect }[] = [];
 
   constructor(
     private host: InventoryHost,
@@ -131,8 +141,25 @@ export class InventoryUI {
     return this.mode !== null;
   }
 
-  openInventory(): void {
+  openInventory(tab: 'inventory' | 'quests' = 'inventory'): void {
     this.mode = { kind: 'inventory' };
+    this.tab = this.host.journal ? tab : 'inventory';
+  }
+
+  /** Has tabs (the inventory screen, with a journal to show). */
+  private get tabbed(): boolean {
+    return this.mode?.kind === 'inventory' && !!this.host.journal;
+  }
+
+  private switchTab(tab: 'inventory' | 'quests'): void {
+    if (tab === this.tab) return;
+    if (this.drag) {
+      cancelDrag(this.drag);
+      this.drag = null;
+      this.changed();
+    }
+    this.tab = tab;
+    uiSound('ui.click');
   }
 
   openLoot(target: LootTarget): void {
@@ -160,7 +187,10 @@ export class InventoryUI {
 
   /** Esc: drop the held item back first, close on the next press. */
   escape(): void {
-    if (this.buying) {
+    if (this.tabbed && this.tab === 'quests' && this.journal?.escape()) return;
+    if (this.confirm) {
+      this.confirm = null;
+    } else if (this.buying) {
       this.buying = null;
     } else if (this.drag) {
       cancelDrag(this.drag);
@@ -257,6 +287,11 @@ export class InventoryUI {
     if (this.mode.kind === 'loot') {
       const t = this.mode.target;
       const mine = h.kind === 'grid' ? h.grid === p.inventory : h.holder === p.equipment;
+      if (mine && isQuestItem(item)) {
+        this.host.toast('Quest items stay in your bags');
+        uiSound('inv.noSpace');
+        return;
+      }
       into = mine ? t.inventory : p.inventory;
       r = quickMove(item, h, into);
     } else if (this.mode.kind === 'inventory') {
@@ -326,12 +361,30 @@ export class InventoryUI {
   }
 
   /** Handle pointer and keys for this frame. */
-  update(dt: number, ptr: UiPointer, keys: { rotate: boolean; shift: boolean }, W: number, H: number): void {
+  update(dt: number, ptr: UiPointer, keys: { rotate: boolean; shift: boolean; tab?: boolean }, W: number, H: number): void {
     if (!this.mode) return;
     this.time += dt;
     this.layout = this.buildLayout(W, H);
+    // Tabs: click one, or Tab / Q to switch.
+    if (this.tabbed) {
+      if (keys.tab && !this.confirm) this.switchTab(this.tab === 'inventory' ? 'quests' : 'inventory');
+      const t = ptr.pressed && !this.confirm ? this.tabRects.find((x) => inRect(x.r, ptr.x, ptr.y)) : undefined;
+      if (t) {
+        this.switchTab(t.tab);
+        return;
+      }
+      if (this.tab === 'quests') {
+        this.journal ??= new JournalPanel(this.host.journal!);
+        this.journal.update(ptr, W, H);
+        return;
+      }
+    }
     const { x, y } = ptr;
     const overflow = this.host.player.inventory;
+    if (this.confirm) {
+      this.confirm.update(W, H, ptr, { up: false, down: false, confirm: false, back: false });
+      return;
+    }
 
     if (this.flash) {
       this.flash.left -= dt;
@@ -426,6 +479,13 @@ export class InventoryUI {
         const d = this.drag;
         this.drag = null;
         const shop = this.mode.shop;
+        if (isQuestItem(d.item)) {
+          cancelDrag(d);
+          uiSound('inv.noSpace');
+          this.host.toast("Quest items can't be sold");
+          this.changed();
+          return;
+        }
         if (shop.buys && !shop.buys(d.item)) {
           cancelDrag(d);
           uiSound('inv.noSpace');
@@ -443,7 +503,19 @@ export class InventoryUI {
         const d = this.drag;
         this.drag = null;
         const target = this.dropTarget(x, y);
-        if (target) {
+        const questItem = isQuestItem(d.item);
+        const fromBags = d.from.kind === 'grid' && d.from.grid === this.host.player.inventory;
+        if (questItem && target?.kind === 'world') {
+          // Dropping it may fail the quest: ask first.
+          cancelDrag(d);
+          this.askDrop(d.item);
+          this.changed();
+        } else if (questItem && fromBags && target?.kind === 'grid' && target.grid !== this.host.player.inventory) {
+          cancelDrag(d);
+          uiSound('inv.noSpace');
+          this.host.toast('Quest items stay in your bags');
+          this.changed();
+        } else if (target) {
           const r = dropDrag(d, target, overflow);
           if (r.dropped) this.host.dropToWorld(r.dropped);
           // Where it landed: a worn piece rustles, a gun clicks into its slot, the rest is set down.
@@ -467,7 +539,19 @@ export class InventoryUI {
     const p = this.host.player;
     ctx.fillStyle = 'rgba(31,21,16,0.55)';
     ctx.fillRect(0, 0, W, H);
-    for (const panel of this.layout.panels) drawPanel(ctx, panel, panel.title);
+    if (this.tabbed) {
+      const panel = this.layout.panels[0];
+      drawPanel(ctx, panel, '');
+      this.drawTabs(ctx, panel, ptr);
+      if (this.tab === 'quests') {
+        this.journal ??= new JournalPanel(this.host.journal!);
+        const hint = 'TAB / Q SWITCH   CLICK A QUEST   I/ESC CLOSE';
+        drawText(ctx, hint, Math.round(panel.x + panel.w / 2 - textWidth(hint) / 2), Math.min(H - 7, panel.y + panel.h + 7), UI.sand, UI.ink);
+        this.journal.draw(ctx, panel, ptr, W, H);
+        drawCursor(ctx, ptr.x, ptr.y);
+        return;
+      }
+    } else for (const panel of this.layout.panels) drawPanel(ctx, panel, panel.title);
 
     // A worn dress blocks the top slot.
     const dressWorn = !!p.equipment.clothing.legs && clothingOf(itemDef(p.equipment.clothing.legs.defId))?.slot === 'fullBody';
@@ -567,8 +651,54 @@ export class InventoryUI {
     const hx = Math.round((first.x + last.x + last.w) / 2 - textWidth(hint) / 2);
     drawText(ctx, hint, hx, Math.min(H - 7, last.y + last.h + 7), UI.sand, UI.ink);
 
-    if (tooltip) drawTooltip(ctx, tooltip, ptr.x, ptr.y, W, H);
+    if (tooltip && !this.confirm) drawTooltip(ctx, tooltip, ptr.x, ptr.y, W, H);
+    if (this.confirm) {
+      ctx.fillStyle = 'rgba(31,21,16,0.5)';
+      ctx.fillRect(0, 0, W, H);
+      this.confirm.draw(ctx, W, H);
+    }
     drawCursor(ctx, ptr.x, ptr.y);
+  }
+
+  /** INVENTORY | QUESTS plates on top of the panel; the open one is lit. */
+  private drawTabs(ctx: CanvasRenderingContext2D, panel: Rect, ptr: UiPointer): void {
+    const tabs = [
+      { tab: 'inventory' as const, label: 'INVENTORY' },
+      { tab: 'quests' as const, label: 'QUESTS' },
+    ];
+    const widths = tabs.map((t) => textWidth(t.label) + 8);
+    let x = Math.round(panel.x + panel.w / 2 - (widths[0] + widths[1] + 4) / 2);
+    this.tabRects = tabs.map((t, i) => {
+      const r = { x, y: panel.y - 7, w: widths[i], h: 10 };
+      x += widths[i] + 4;
+      const on = t.tab === this.tab;
+      const over = !on && inRect(r, ptr.x, ptr.y);
+      ctx.fillStyle = UI.ink;
+      ctx.fillRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2);
+      ctx.fillStyle = on ? UI.darkBrown : over ? UI.wood : UI.leather;
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      drawText(ctx, t.label, r.x + 4, r.y + 3, on ? UI.brassLight : UI.sand);
+      return { tab: t.tab, r };
+    });
+  }
+
+  /** "Drop it?" for a quest item; yes drops it at your feet (it stays on this POI). */
+  private askDrop(item: ItemInstance): void {
+    const name = itemDef(item.defId).name;
+    this.confirm = new Dialog('DROP QUEST ITEM?', `The ${name} is needed for a quest. Dropping it may fail the quest.`, [
+      {
+        label: 'DROP',
+        action: () => {
+          this.confirm = null;
+          const h = this.holdingOf(item);
+          if (h?.kind === 'grid') h.grid.remove(item);
+          this.host.dropToWorld(item);
+          uiSound('inv.drop');
+          this.changed();
+        },
+      },
+      { label: 'KEEP', action: () => (this.confirm = null) },
+    ]);
   }
 
   private tooltip(item: ItemInstance): { text: string; color?: string }[] {
@@ -595,4 +725,9 @@ export class InventoryUI {
 function equipSound(item: ItemInstance): string {
   const cat = itemDef(item.defId).category;
   return cat === 'weapon' ? 'inv.gun' : cat === 'clothing' ? 'inv.cloth' : 'inv.drop';
+}
+
+/** A quest's own item (can't be sold or stored away; dropping it asks first). */
+function isQuestItem(item: ItemInstance): boolean {
+  return itemDef(item.defId).quest?.questItem === true;
 }

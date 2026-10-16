@@ -3,6 +3,8 @@ import { CONFIG } from '../config';
 import { disposeObject } from '../core/dispose';
 import type { Engine } from '../core/Engine';
 import type { ModeKind } from '../modes/GameMode';
+import type { ModeOptions } from '../core/GameStateManager';
+import { hasStorySave } from '../modes/StoryMode';
 import { readBestWave } from '../modes/records';
 import { buildMenuDesert } from '../world/maps/menuDesert';
 import type { Tumbleweed } from '../world/Tumbleweed';
@@ -11,7 +13,7 @@ import { drawText, drawTextScaled, textWidth, textWidthScaled } from './PixelFon
 import { UI } from './theme';
 import { drawCursor } from './widgets';
 
-/** Title screen: live desert backdrop, mode buttons, "coming soon" hint for Story. */
+/** Title screen: live desert backdrop, mode buttons; Story continues a saved story or starts one. */
 export class MainMenu {
   private scene = new THREE.Scene();
   private tumbleweeds: Tumbleweed[];
@@ -23,7 +25,7 @@ export class MainMenu {
 
   constructor(
     private engine: Engine,
-    start: (mode: ModeKind) => void,
+    start: (mode: ModeKind, opts?: ModeOptions) => void,
   ) {
     const r = CONFIG.render;
     this.scene.background = new THREE.Color(r.skyColor);
@@ -48,10 +50,27 @@ export class MainMenu {
       { label: 'WAVE', sub: best > 0 ? `BEST: WAVE ${best}` : undefined, description: 'Survive endless waves of outlaws.', action: () => start('wave') },
       {
         label: 'STORY',
-        dim: true,
-        description: 'Coming soon.',
+        sub: hasStorySave() ? 'SAVED STORY' : undefined,
+        description: hasStorySave() ? 'Continue the story of Kane, or start over.' : 'Begin the story of Kane.',
         action: () => {
-          this.dialog = new Dialog('STORY', "Story mode isn't available yet. Check back in a future update!", [{ label: 'OK', action: () => (this.dialog = null) }]);
+          if (!hasStorySave()) {
+            start('story', { newGame: true });
+            return;
+          }
+          const ask = () =>
+            (this.dialog = new Dialog('STORY', 'Pick up where you left off, or start a new story?', [
+              { label: 'CONTINUE', action: () => start('story', {}) },
+              {
+                label: 'NEW GAME',
+                action: () =>
+                  (this.dialog = new Dialog('NEW GAME?', 'Starting over wipes your saved story: quests and map.', [
+                    { label: 'START OVER', action: () => start('story', { newGame: true }) },
+                    { label: 'BACK', action: ask },
+                  ])),
+              },
+              { label: 'BACK', action: () => (this.dialog = null) },
+            ]));
+          ask();
         },
       },
     ], 110, 18, 5);

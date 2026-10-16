@@ -1,0 +1,50 @@
+{
+  "formatVersion": 1,
+  "quests": [
+    {
+      "id": "the-lost-letter",
+      "title": "The Lost Letter",
+      "giver": "kanes-crossing:tailor",
+      "modes": [
+        "story",
+        "sandbox"
+      ],
+      "storyStart": true,
+      "version": 2
+    },
+    {
+      "id": "bounty-on-the-ridge",
+      "title": "Bounty on the Ridge",
+      "giver": "kanes-crossing:gunsmith",
+      "modes": [
+        "story"
+      ],
+      "requires": [
+        {
+          "type": "quest",
+          "quest": "the-lost-letter",
+          "status": "completed"
+        }
+      ],
+      "version": 1,
+      "restartable": true
+    },
+    {
+      "id": "errand-against-the-clock",
+      "title": "Errand Against the Clock",
+      "giver": "kanes-crossing:tailor",
+      "modes": [
+        "story"
+      ],
+      "requires": [
+        {
+          "type": "quest",
+          "quest": "the-lost-letter",
+          "status": "completed"
+        }
+      ],
+      "version": 1,
+      "restartable": true
+    }
+  ]
+}

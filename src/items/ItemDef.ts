@@ -14,6 +14,19 @@ export function itemDef(id: string): ItemDef {
   return d;
 }
 
+/** Is there an item with this id (the game's own or one registered at runtime)? */
+export function hasItemDef(id: string): boolean {
+  return id in ITEMS || id in extra;
+}
+
+/** Add an item definition at runtime (quest packs). Registering the same id again replaces it. */
+export function registerItem(def: ItemDef): void {
+  if (isBuiltinItem(def.id)) throw new Error(`Item "${def.id}" already exists`);
+  extra[def.id] = def;
+}
+
+const isBuiltinItem = (id: string) => id in ITEMS;
+
 export function weaponOf(def: ItemDef): WeaponDef | null {
   if (!def.weaponDefId) return null;
   return (WEAPONS as Record<string, WeaponDef>)[def.weaponDefId] ?? extraWeapons[def.weaponDefId] ?? null;

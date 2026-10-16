@@ -1,0 +1,268 @@
+{
+  "formatVersion": 1,
+  "id": "the-lost-letter",
+  "title": "The Lost Letter",
+  "description": "The tailor misplaced a letter meant for the gunsmith. She thinks it ended up in a chest across the street.",
+  "giver": "kanes-crossing:tailor",
+  "modes": [
+    "story",
+    "sandbox"
+  ],
+  "steps": [
+    {
+      "id": "ask",
+      "type": "talk",
+      "npc": "kanes-crossing:tailor",
+      "dialog": "offer",
+      "objective": "Ask the tailor about her lost letter"
+    },
+    {
+      "id": "find",
+      "type": "collect",
+      "item": "tailors-letter",
+      "count": 1,
+      "label": "Sealed letter",
+      "objective": "Find the letter in the chest on the porch across the street",
+      "setup": [
+        {
+          "type": "placeItem",
+          "item": "tailors-letter",
+          "container": "kanes-crossing:chest-porch"
+        }
+      ]
+    },
+    {
+      "id": "deliver",
+      "type": "deliver",
+      "npc": "kanes-crossing:gunsmith",
+      "item": "tailors-letter",
+      "objective": "Bring the letter to the gunsmith"
+    }
+  ],
+  "rewards": {
+    "money": 40
+  },
+  "items": [
+    {
+      "id": "tailors-letter",
+      "name": "Sealed Letter",
+      "description": "A letter sealed with red wax, addressed to the gunsmith in a neat hand.",
+      "shape": "letter",
+      "colors": {
+        "main": "#f4ecd8",
+        "accent": "#a33a2a"
+      }
+    }
+  ],
+  "dialogs": [
+    {
+      "id": "offer",
+      "npc": "kanes-crossing:tailor",
+      "if": [
+        {
+          "type": "any",
+          "conds": [
+            {
+              "type": "quest",
+              "quest": "the-lost-letter",
+              "status": "available"
+            },
+            {
+              "type": "quest",
+              "quest": "the-lost-letter",
+              "status": "active",
+              "step": "ask"
+            }
+          ]
+        }
+      ],
+      "start": "ask",
+      "nodes": [
+        {
+          "id": "ask",
+          "text": "Oh, thank heavens, a new face! I've lost a letter meant for the gunsmith. Sealed, red wax. You haven't seen it, have you?",
+          "mood": "greet",
+          "choices": [
+            {
+              "text": "I can look for it.",
+              "do": [
+                {
+                  "type": "startQuest",
+                  "quest": "the-lost-letter"
+                },
+                {
+                  "type": "advance",
+                  "quest": "the-lost-letter"
+                }
+              ],
+              "next": "thanks"
+            },
+            {
+              "text": "What's in it?",
+              "next": "private"
+            },
+            {
+              "text": "Make it worth my while.",
+              "next": "haggle"
+            },
+            {
+              "text": "Not my problem.",
+              "next": "bye"
+            }
+          ]
+        },
+        {
+          "id": "private",
+          "text": "That's between him and me, thank you very much. Will you help or not?",
+          "mood": "warn",
+          "choices": [
+            {
+              "text": "All right, I'll find it.",
+              "do": [
+                {
+                  "type": "startQuest",
+                  "quest": "the-lost-letter"
+                },
+                {
+                  "type": "advance",
+                  "quest": "the-lost-letter"
+                }
+              ],
+              "next": "thanks"
+            },
+            {
+              "text": "No.",
+              "next": "bye"
+            }
+          ]
+        },
+        {
+          "id": "haggle",
+          "text": "Forty dollars, from him, when he gets it. He's good for it.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "Deal.",
+              "do": [
+                {
+                  "type": "startQuest",
+                  "quest": "the-lost-letter"
+                },
+                {
+                  "type": "advance",
+                  "quest": "the-lost-letter"
+                }
+              ],
+              "next": "thanks"
+            },
+            {
+              "text": "Never mind.",
+              "next": "bye"
+            }
+          ]
+        },
+        {
+          "id": "thanks",
+          "text": "Bless you! I think it slipped into the chest on the porch across the street.",
+          "mood": "greet"
+        },
+        {
+          "id": "bye",
+          "text": "Suit yourself.",
+          "mood": "calm"
+        }
+      ]
+    },
+    {
+      "id": "waiting",
+      "npc": "kanes-crossing:tailor",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "the-lost-letter",
+          "status": "active",
+          "step": "find"
+        }
+      ],
+      "start": "any-luck",
+      "nodes": [
+        {
+          "id": "any-luck",
+          "text": "Any luck? The chest on the porch, across the street.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "Still looking."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "found",
+      "npc": "kanes-crossing:tailor",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "the-lost-letter",
+          "status": "active",
+          "step": "deliver"
+        }
+      ],
+      "start": "go",
+      "nodes": [
+        {
+          "id": "go",
+          "text": "You found it! Off to the gunsmith with it, quick now.",
+          "mood": "greet"
+        }
+      ]
+    },
+    {
+      "id": "handover",
+      "npc": "kanes-crossing:gunsmith",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "the-lost-letter",
+          "status": "active",
+          "step": "deliver"
+        }
+      ],
+      "start": "what",
+      "nodes": [
+        {
+          "id": "what",
+          "text": "Something for me, stranger?",
+          "mood": "greet",
+          "choices": [
+            {
+              "text": "A letter from the tailor.",
+              "if": [
+                {
+                  "type": "hasItem",
+                  "item": "tailors-letter"
+                }
+              ],
+              "showLocked": true,
+              "do": [
+                {
+                  "type": "deliver"
+                }
+              ],
+              "next": "thanks"
+            },
+            {
+              "text": "Never mind."
+            }
+          ]
+        },
+        {
+          "id": "thanks",
+          "text": "Her hand, sure enough. About time, too. Here, for your trouble.",
+          "mood": "calm"
+        }
+      ]
+    }
+  ]
+}

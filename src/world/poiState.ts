@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Vec2 } from '../data/types';
+import type { NpcDef, Vec2 } from '../data/types';
 import type { Npc, NpcState } from '../entities/Npc';
 import { itemFromData, itemToData, type ItemData, type ItemInstance } from '../items/ItemInstance';
 import type { ContainerState, LootContainer } from './Container';
@@ -28,6 +28,8 @@ export interface HorseState {
 export interface PoiSnapshot {
   containers: ContainerState[];
   npcs: NpcState[];
+  /** NPCs that aren't part of the map (spawned by quests), with their definitions. */
+  extraNpcs: { def: NpcDef; state: NpcState }[];
   items: GroundItemState[];
   horses: HorseState[];
 }
@@ -42,12 +44,15 @@ export interface PoiRuntime {
   /** Horses standing around (not the player's: that one travels with the playthrough). */
   looseHorses(): HorseState[];
   setLooseHorses(horses: readonly HorseState[]): void;
+  /** Bring in an NPC that isn't part of the map (a quest NPC) and return it. */
+  spawnNpc(def: NpcDef): Npc;
 }
 
 export function capturePoi(rt: PoiRuntime): PoiSnapshot {
   return {
     containers: rt.containers.map((c) => c.state()),
-    npcs: rt.npcList.map((n) => n.state()),
+    npcs: rt.npcList.filter((n) => !n.def.questId).map((n) => n.state()),
+    extraNpcs: rt.npcList.filter((n) => n.def.questId).map((n) => ({ def: n.def, state: n.state() })),
     items: rt.groundItems().map((g) => ({ item: itemToData(g.item), pos: [g.pos.x, g.pos.z] as Vec2, ...(g.npc ? { npc: g.npc.def.id } : {}) })),
     horses: rt.looseHorses(),
   };
@@ -56,6 +61,7 @@ export function capturePoi(rt: PoiRuntime): PoiSnapshot {
 /** Make a freshly built map look the way it was left. */
 export function applyPoi(rt: PoiRuntime, snap: PoiSnapshot): void {
   snap.containers.forEach((s, i) => rt.containers[i]?.restore(s));
+  for (const x of snap.extraNpcs ?? []) rt.spawnNpc(x.def).restore(x.state);
   for (const s of snap.npcs) rt.npcList.find((n) => n.def.id === s.id)?.restore(s);
   rt.clearGroundItems();
   for (const g of snap.items) {

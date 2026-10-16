@@ -6,7 +6,8 @@ import { horseTravels, inCombat, insideExit, Playthrough, type PoiSession } from
 import { NPCS } from '../data/npcs';
 import { pathThrough, poiById, SANDBOX_WORLD, validateWorld, type PoiDef, type WorldDef } from '../data/world';
 import { Horse } from '../entities/Horse';
-import type { Npc } from '../entities/Npc';
+import { Npc } from '../entities/Npc';
+import type { NpcDef } from '../data/types';
 import { NpcSystem } from '../entities/NpcSystem';
 import { Player } from '../entities/Player';
 import { TargetSystem } from '../entities/Targets';
@@ -122,6 +123,11 @@ class FakeRuntime implements PoiRuntime {
   setLooseHorses(h: readonly HorseState[]) {
     this.horses = [...h];
   }
+  spawnNpc(def: NpcDef) {
+    const n = new Npc(def);
+    this.npcList.push(n);
+    return n;
+  }
 }
 
 describe('places keep their state', () => {
@@ -182,6 +188,11 @@ class FakeRuntimeLite implements PoiRuntime {
     return [];
   }
   setLooseHorses() {}
+  spawnNpc(def: NpcDef) {
+    const n = new Npc(def);
+    this.npcList.push(n);
+    return n;
+  }
 }
 
 /** A stand-in for a running map: enough for the playthrough to move the player and horse around. */
@@ -410,5 +421,83 @@ describe('world debug (0)', () => {
     expect(pt.discovery.poi('two-spurs-ranch')).toBe('visible'); // you're here
     expect(pt.discovery.path('ranch-gulch')).toBe('undiscovered');
     expect(saved.at(-1)).toEqual(pt.discovery.save());
+  });
+});
+
+describe('quests ride along', () => {
+  it("the destination's quest packs are asked for before its map loads; places left and entered are told", async () => {
+    const { pt, loaded } = playthrough();
+    const told: string[] = [];
+    pt.quests = {
+      emit: (e) => void told.push(`${e.type}:${e.poi}`),
+      prefetchFor: (poi) => void told.push(`prefetch:${poi} (maps loaded: ${loaded.join(',')})`),
+    };
+    await pt.start();
+    await pt.travel('north');
+    expect(told).toEqual(['poiEntered:kanes-crossing', 'prefetch:two-spurs-ranch (maps loaded: kanes-crossing)', 'poiLeft:kanes-crossing', 'poiEntered:two-spurs-ranch']);
+    expect(pt.arrivedAt).toBe('south');
+  });
+
+  it('quest state survives travel: a "ride to" step completes on arrival, its timer ran during the ride', async () => {
+    const { pt } = playthrough();
+    const { QuestRuntime } = await import('../quests/QuestRuntime');
+    const toasts: string[] = [];
+    const quest = {
+      formatVersion: 1, id: 'ride', title: 'Ride', description: 'x', giver: 'kanes-crossing:tailor', modes: ['sandbox' as const],
+      steps: [
+        { id: 'go', type: 'goto' as const, poi: 'two-spurs-ranch', objective: 'Ride to the ranch', fail: [{ type: 'timer' as const, seconds: 60 }] },
+        { id: 'talk', type: 'talk' as const, npc: 'two-spurs-ranch:rancher', objective: 'Talk to the rancher' },
+      ],
+    };
+    const lp = { pack: quest, hooks: null };
+    const rt = new QuestRuntime({
+      catalog: [{ id: 'ride', title: 'Ride', giver: 'kanes-crossing:tailor', modes: ['sandbox'], version: 1 }],
+      packs: { get: () => lp, load: async () => lp },
+      world: {
+        get poi() { return pt.poi; },
+        money: () => 0, giveMoney: () => {}, takeMoney: () => false, countItem: () => 0, giveItem: () => 0, takeItem: () => 0,
+        itemName: (i) => i, discovery: (p) => pt.discovery.poi(p), reveal: (p) => void pt.learn(p), revealPath: (p) => void pt.learnPath(p),
+        poiName: (p) => poiById(SANDBOX_WORLD, p).name, toast: (t) => void toasts.push(t), inArea: () => false,
+        setup: () => {}, spawn: () => {}, despawn: () => {}, cleanup: () => {}, heldKeys: () => [],
+      },
+    });
+    pt.quests = { emit: (e) => rt.emit(e), prefetchFor: () => {} };
+    await pt.start();
+    await rt.start('ride');
+    rt.update(5); // walking to the exit
+    const trip = pt.travel('north');
+    rt.update(3); // the ride
+    await trip;
+    expect(rt.state('ride')).toMatchObject({ status: 'active', step: 1 });
+    expect(toasts).toEqual(['Quest started: Ride', 'Reached Two Spurs Ranch', 'Next: Talk to the rancher']);
+    await pt.travel('south');
+    rt.emit({ type: 'talkedTo', poi: 'kanes-crossing', npc: 'rancher' }); // (not him: he's at the ranch)
+    expect(rt.state('ride')!.status).toBe('active');
+  });
+
+  it('quest reveals: a trail (and its ends) goes on the map, saved like any discovery', async () => {
+    const { pt } = playthrough();
+    const saved: string[][] = [];
+    pt.onReveal = (_r, all) => void saved.push(all.paths);
+    await pt.start();
+    expect(pt.learnPath('town-gulch').map((r) => `${r.kind}:${r.id}:${r.state}`)).toEqual(['poi:rattlesnake-gulch:hidden', 'path:town-gulch:hidden']);
+    expect(saved.at(-1)).toContain('town-gulch');
+  });
+});
+
+describe('starting where a story was left', () => {
+  it('on that POI, at the exit you came in by', async () => {
+    const maps: Record<string, () => Promise<PoiMap>> = {};
+    for (const p of SANDBOX_WORLD.pois) maps[p.id] = async () => ({ build: () => null as never, npcs: [] });
+    const pt = new Playthrough(SANDBOX_WORLD, new PoiMapRegistry(maps), async (poi, _map, player) => new FakeSession(poi, player), {
+      purse: { dollars: 0, earned: 0 },
+      at: { poi: 'two-spurs-ranch', exit: 'east' },
+    });
+    await pt.start();
+    expect(pt.poi).toBe('two-spurs-ranch');
+    expect([pt.player.pos.x, pt.player.pos.z]).toEqual(exitOf('two-spurs-ranch', 'east').arrive);
+    // A place that no longer exists: the world's start.
+    const lost = new Playthrough(SANDBOX_WORLD, new PoiMapRegistry(maps), async (poi, _map, player) => new FakeSession(poi, player), { purse: { dollars: 0, earned: 0 }, at: { poi: 'atlantis', exit: 'x' } });
+    expect(lost.poi).toBe('kanes-crossing');
   });
 });

@@ -1,0 +1,147 @@
+{
+  "formatVersion": 1,
+  "id": "errand-against-the-clock",
+  "title": "Errand Against the Clock",
+  "description": "The tailor's brother Eli keeps watch at a lookout on the Ridge and has taken a fever. She has medicine for him, but it won't keep long in this heat.",
+  "giver": "kanes-crossing:tailor",
+  "modes": ["story"],
+  "restartable": true,
+  "hooks": true,
+  "steps": [
+    {
+      "id": "ride",
+      "type": "goto",
+      "area": "the-ridge:lookout",
+      "carrying": "elis-medicine",
+      "label": "the lookout",
+      "objective": "Take the medicine to the lookout on the Ridge",
+      "setup": [{ "type": "spawn", "npc": "the-ridge:eli" }]
+    },
+    {
+      "id": "give",
+      "type": "deliver",
+      "npc": "the-ridge:eli",
+      "item": "elis-medicine",
+      "objective": "Give Eli the medicine"
+    }
+  ],
+  "rewards": { "money": 60 },
+  "fail": [
+    { "type": "timer", "seconds": 150, "reason": "The medicine spoiled in the heat" },
+    { "type": "itemLost", "item": "elis-medicine", "reason": "You lost Eli's medicine" }
+  ],
+  "items": [
+    {
+      "id": "elis-medicine",
+      "name": "Eli's Medicine",
+      "description": "A brown bottle of fever tonic, corked and wrapped in a cloth. It won't keep long in this heat.",
+      "shape": "bottle",
+      "colors": { "main": "#8a5a2a", "accent": "#b5834f" }
+    }
+  ],
+  "npcs": [
+    {
+      "id": "eli",
+      "poi": "the-ridge",
+      "spawn": [-14, -9],
+      "def": {
+        "name": "Eli Whitlock",
+        "attitude": "friendly",
+        "routine": { "kind": "idle", "at": [-14, -9], "facing": 1.6 },
+        "lines": { "greet": ["Who goes there?", "Feel like the sun's sitting on my chest."] }
+      }
+    }
+  ],
+  "dialogs": [
+    {
+      "id": "offer",
+      "npc": "kanes-crossing:tailor",
+      "if": [{ "type": "quest", "quest": "errand-against-the-clock", "status": "available" }],
+      "start": "ask",
+      "nodes": [
+        {
+          "id": "ask",
+          "text": "Oh, it's you again! My brother Eli keeps watch up on the Ridge, and he's taken a fever. This medicine won't keep in this heat - could you ride it out to him? Quickly?",
+          "mood": "warn",
+          "choices": [
+            {
+              "text": "I'll ride now.",
+              "do": [
+                { "type": "startQuest", "quest": "errand-against-the-clock" },
+                { "type": "giveItem", "item": "elis-medicine" },
+                { "type": "reveal", "poi": "the-ridge" },
+                { "type": "revealPath", "path": "town-ridge" }
+              ],
+              "next": "go"
+            },
+            { "text": "How quick is quick?", "next": "quick" },
+            { "text": "Not today.", "next": "no" }
+          ]
+        },
+        {
+          "id": "quick",
+          "text": "Two and a half minutes, no more. After that it's no good to him.",
+          "mood": "warn",
+          "choices": [
+            {
+              "text": "Then I'd better go.",
+              "do": [
+                { "type": "startQuest", "quest": "errand-against-the-clock" },
+                { "type": "giveItem", "item": "elis-medicine" },
+                { "type": "reveal", "poi": "the-ridge" },
+                { "type": "revealPath", "path": "town-ridge" }
+              ],
+              "next": "go"
+            },
+            { "text": "Too rushed for me.", "next": "no" }
+          ]
+        },
+        { "id": "go", "text": "He's at the lookout, west of the camp up there. Ride!", "mood": "warn" },
+        { "id": "no", "text": "Then I'll pray someone else comes by.", "mood": "calm" }
+      ]
+    },
+    {
+      "id": "hurry",
+      "npc": "kanes-crossing:tailor",
+      "if": [{ "type": "quest", "quest": "errand-against-the-clock", "status": "active" }],
+      "start": "hurry",
+      "nodes": [{ "id": "hurry", "text": "What are you doing here? The Ridge! East of town! Hurry!", "mood": "warn" }]
+    },
+    {
+      "id": "thanks-fast",
+      "npc": "the-ridge:eli",
+      "if": [
+        { "type": "quest", "quest": "errand-against-the-clock", "status": "active", "step": "give" },
+        { "type": "flag", "flag": "errand-fast" }
+      ],
+      "start": "fast",
+      "nodes": [
+        {
+          "id": "fast",
+          "text": "My sister sent you? And you rode like the devil was behind you - the bottle's still cool!",
+          "mood": "greet",
+          "choices": [{ "text": "Drink up.", "do": [{ "type": "deliver" }], "next": "better" }]
+        },
+        { "id": "better", "text": "I can feel it working already. Here - for the haste. You earned it.", "mood": "greet" }
+      ]
+    },
+    {
+      "id": "thanks-slow",
+      "npc": "the-ridge:eli",
+      "if": [
+        { "type": "quest", "quest": "errand-against-the-clock", "status": "active", "step": "give" },
+        { "type": "not", "cond": { "type": "flag", "flag": "errand-fast" } }
+      ],
+      "start": "slow",
+      "nodes": [
+        {
+          "id": "slow",
+          "text": "Took your sweet time... I was starting to think nobody was coming.",
+          "mood": "calm",
+          "choices": [{ "text": "Here. Drink.", "do": [{ "type": "deliver" }], "next": "thanks" }]
+        },
+        { "id": "thanks", "text": "Still. You came, and that counts. Thank you.", "mood": "calm" }
+      ]
+    }
+  ]
+}

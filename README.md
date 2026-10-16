@@ -22,7 +22,7 @@ deploys there (`.github/workflows/deploy.yml`). One-time setup: repo Settings �
 | Mouse | Aim · Left click (hold) shoot (draws the revolver first if holstered) |
 | R | Reload (from ammo in your inventory) · rotate a held item in the inventory |
 | 1 / 2 / 3 | Select weapon slot (again: holster) |
-| I | Inventory (pauses the game) · Esc / I closes |
+| I | Inventory (pauses the game) · Esc / I closes · Tab / Q: the QUESTS tab (journal) |
 | G | Use a bandage (also right-click it in the inventory) |
 | B | Cover debug view: prop cover heights (green low / yellow medium / orange tall), hitboxes, bullet heights |
 | Esc | Pause menu (closes an open inventory / loot / shop screen first) |
@@ -36,7 +36,39 @@ deploys there (`.github/workflows/deploy.yml`). One-time setup: repo Settings �
 | 8 | Debug overlay (horse heading, input, turn radius, speed, FPS, NPC states) |
 | M | World map (sandbox; pauses like the inventory). Mute is in the pause menu's sound settings |
 | 9 | Sound debug: playing voices (bus, sample or synth, volume, distance) and rings at their sources |
-| 0 | World debug (sandbox): reveal all places and trails, reset discovery, show exit zones, teleport to any place's exit |
+| 0 | World debug (sandbox and story): reveal all places and trails, reset discovery, show exit zones, teleport to any place's exit |
+| 7 | Quest debug (sandbox and story): current POI, loaded packs, each quest's state, step and counter, buttons to start / advance / fail / reset it, reset the quest save, validation errors |
+
+## Quests
+
+Quests are content, not code: the game bundle holds only the quest engine (`src/quests/`), and every quest lives in `public/quests/`.
+
+- **Catalog** `public/quests/index.json`: id, title, giver (`<poi>:<npc>`), modes (`story` / `sandbox`), requirements (e.g. another quest completed), `storyStart`, pack version. Fetched when a playthrough starts and filtered to its mode; nothing else is fetched then. Wave mode has no quests.
+- **Packs** `public/quests/<id>/quest.json` (plus optional `icons/*.png`): title, description, steps, rewards, fail conditions, items, NPCs, dialogs; all English text, right in the pack. Fetched only when needed — within 15 units of a giver on the giver's POI, when the quest starts, when a save with it active loads, and ahead of travel to a POI with its givers — then cached. A failed fetch shows a message and is tried again on the next trigger. Every pack is validated (`src/quests/validate.ts`, `formatVersion` 1); errors name the quest and the field, and every POI must exist in the mode's world.
+- **Hooks** (optional) `src/quests/<id>/hooks.ts`: default-exports `(api: QuestApi) => QuestHooks`. Vite makes one chunk per quest, imported only with its pack. Hooks get a narrow API (state, flags, advance / fail, items, money, NPCs, dialogs, messages, events, POI, reveals), never engine internals.
+- **World references** are global `<poiId>:<id>` (NPCs, containers, named areas): the same id on two POIs is two different things. Containers can carry a stable id (`ContainerSet.add(…, id)`, e.g. `kanes-crossing:chest-porch`); maps can name areas (`WorldData.areas`).
+- **Runtime** (`QuestRuntime`, owned by the `QuestSystem` the playthrough carries, so it survives every POI switch): several quests at once, one current step each, done in order. Step types `talk`, `deliver`, `goto` (an area, optionally carrying an item, or arriving at a POI), `defeat` (listed quest NPCs or N of a group, counted), `collect` (N in your bags, counted). Game events (npcKilled, talkedTo, itemAdded / itemRemoved, areaEntered, poiEntered / poiLeft, poiDiscovered, containerOpened, dialogAction) carry their POI and go to every active quest. Fail conditions: a key NPC dies, a quest item is lost, a timer runs out (timers run in play on any POI and during the ride, not when paused, on the world map or in a panel). Rewards: money and items (what doesn't fit drops at your feet). Step setup (spawns, placed items) is per POI and applied once — on entering that POI, never twice — and restored after a reload.
+- **Dialogs** (in the pack, `dialogs`): trees of nodes (speaker, text, mood — the mood drives the NPC's murmur) and choices. Choices can have conditions (quest / step state, items, money, flags, current POI, discovery) and actions (start quest, advance, deliver, give / take items and money, set flag, spawn, open shop, reveal POI / trail, end); failing choices are hidden, or greyed out with `showLocked`. A dialog belongs to `<poi>:<npc>` and is offered while its `if` holds (an offer: `{ quest, status: available }`; a step's lines: `{ status: active, step }`). `{npc}` in a text is the NPC's name.
+- **Talking (E)** to an NPC with a quest dialog opens the dialog panel instead of the greeting, hint or shop, and pauses the game: the line types out while the NPC murmurs it (E / Space / click finishes it), choices by click or **1–9**, **Esc** leaves. One quest topic opens straight on it; several, or a merchant, open on a topic list (each quest, Trade, Goodbye). NPCs without quest dialog behave as before; a hint comes back once the dialog is over.
+- **Quest items** (pack `items`) are registered when the pack loads: a procedural look from a small library (letter, key, pouch, box, badge, bottle, map, photo, star, ring) in the pack's colours, or a PNG from the pack's `icons/` as the inventory icon. Quest items can't be sold or put in containers; dropping one asks first (it may fail the quest) and it stays on that POI. When the quest ends they're removed everywhere — bags, containers, bodies, the ground, also on POIs that aren't loaded — unless `keepAfterQuest`.
+- **Quest NPCs** (pack `npcs`): `<poi>:<id>`, a spawn point, optional `group` (for `defeat`), an `archetype` (gunslinger, rifleman, shotgunner: weapon, skill and a bandit look) and any NpcDef fields on top. Hostile ones hold their spot (a territory) instead of hunting you; they never respawn, count for the travel refusal like any hostile, and are stored with their POI's state (alive or dead) when you leave.
+- **Step setup** (`setup`): `spawn` an NPC, or `placeItem` in a named container, on a named area or on an NPC's body. Applied when the step becomes current if you're on that POI, otherwise when you get there; never twice. Placed items carry their setup key, so picking one up is remembered and, after a reload, nothing comes back that was already taken or killed (loot of a killed NPC lies where it stood).
+- **Journal** (the inventory's QUESTS tab; click a tab or press **Tab / Q** to switch, the game stays paused): on the left your quests — active, then completed and failed (click a heading to fold it); on the right the selected one: title, who gave it and where, the description, the steps so far (done ones ticked, the current one with its progress, later ones hidden), what to do next (highlighted, naming the place when it's elsewhere — never one you haven't heard of), rewards, the fail conditions that apply (with a running timer), and an **Abandon** button (asks first; the quest's items and people go). Wave mode has no QUESTS tab.
+- **Messages** queue one after another (also across POI switches): quest started, progress ("Bandits 2/3", "Reached The Ridge", "Delivered: …"), the next objective with its POI (never naming a place you haven't heard of), complete with rewards, failed with the reason.
+- **Saved** per mode in localStorage (`sok.quests.sandbox` / `sok.quests.story`, versioned): statuses, steps, counters, flags, timers, quest items held, per-POI quest data.
+- `tests/bundle.test.ts` builds the game and checks that no quest text is in the bundle.
+- **Adding a quest** is a folder in `public/quests/<id>/` (`quest.json`, optional `icons/`) and an entry in `public/quests/index.json` — plus, if it needs a script, `src/quests/<id>/hooks.ts`. No engine changes. Steps can also be `talk` with `"dialog": "<id>"` (done through that dialog's `advance` choice, not by saying hello); conditions include `any` (one of several).
+
+### Story mode
+
+- **Main menu → Story:** a new story when there's no save; otherwise **Continue** or **New Game** (which asks first: it wipes the story's quests and map). `?mode=story` continues (or starts) from the URL. The pause menu's restart continues from the save.
+- **The world** (`STORY_WORLD` in `src/data/world.ts`): Kane's Crossing (start) and **The Ridge** (`world/maps/theRidge.ts`), a rocky outcrop east of town with a bandit camp (tents, a campfire, crates, boulders for cover), a lookout, and named areas `camp`, `camp-entrance`, `lookout`. It starts undiscovered; the trail runs from the east end of the main street to the camp's edge.
+- **A new story** starts with $60 (`CONFIG.story`) and the catalog's `storyStart` quest. Its quests are the catalog's `story` quests; the sandbox offers only its own (`sandbox`), wave mode none.
+- **Saved** as you go: quests (`sok.quests.story`, with the POI and the exit you last arrived through) and discovery (`sok.world.story`). Continue puts you back there. Money, bags (other than quest items) and containers aren't saved yet.
+- **The example quests:**
+  - *The Lost Letter* (story start; also in the sandbox): ask the tailor (branching dialog), find her letter in the chest on the porch across the street, hand it to the gunsmith. $40.
+  - *Bounty on the Ridge* (after the letter): the gunsmith's job reveals the Ridge; ride there, Doyle's gang turns up at the camp (Bandits 0/3), take the wanted poster (PNG icon) from his body, bring it back. Fails if the gunsmith dies or you lose the poster. $120.
+  - *Errand Against the Clock* (after the letter): the tailor's medicine for her brother Eli at the Ridge's lookout, against a 150 s clock that keeps running through the ride. Its `hooks.ts` checks the time left at the lookout: Eli thanks you differently, and adds $20 if you were quick. $60.
 
 ## Sound
 
@@ -90,7 +122,7 @@ NPCs are defined in `src/data/npcs.ts`. Adding one is a data change only: give i
 
 ## Game modes
 
-The game opens on a title screen (live desert backdrop). **Sandbox** is the frontier town. It has two merchants: a gunsmith leaning on a porch post (guns, ammo, bandages) and a tailor by the big west building (clothes only). You start with $150 (`CONFIG.sandbox.startingDollars`) and earn more by selling to them; each buys only what they sell. Shops are data: `MERCHANT_SHOPS` in `data/shop.ts`, and any NPC with `shop: '<id>'` trades instead of talking. **Story** isn't available yet.
+The game opens on a title screen (live desert backdrop). **Sandbox** is the frontier town. It has two merchants: a gunsmith leaning on a porch post (guns, ammo, bandages) and a tailor by the big west building (clothes only). You start with $150 (`CONFIG.sandbox.startingDollars`) and earn more by selling to them; each buys only what they sell. Shops are data: `MERCHANT_SHOPS` in `data/shop.ts`, and any NPC with `shop: '<id>'` trades instead of talking. **Story** (below) is the first version of the story; **Wave** is the survival mode.
 
 ### The sandbox world
 

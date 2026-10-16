@@ -10,6 +10,8 @@ export type StateName = 'MainMenu' | 'Playing' | 'Paused' | 'GameOver';
 export interface ModeOptions {
   /** Wave mode: first wave (dev / testing). */
   startWave?: number;
+  /** Story: start over (otherwise continue the saved story, if there is one). */
+  newGame?: boolean;
 }
 
 /** How modes talk back to the state manager. */
@@ -40,15 +42,18 @@ export class GameStateManager implements ModeHost {
   ) {
     this.pauseMenu = new PauseMenu(engine, {
       resume: () => this.resume(),
-      restart: () => this.defer(() => this.startMode(this.modeKind, this.modeOpts)),
+      // (Restarting a story continues it from its save; it never wipes it.)
+      restart: () => this.defer(() => this.startMode(this.modeKind, this.modeKind === 'story' ? {} : this.modeOpts)),
       mainMenu: () => this.defer(() => this.toMenu()),
     });
   }
 
-  /** Start from the URL: `?mode=sandbox|wave` skips the menu, `?wave=N` picks the first wave. */
+  /** Start from the URL: `?mode=sandbox|wave|story` skips the menu, `?wave=N` picks the first wave. */
   boot(params: URLSearchParams): void {
     const mode = params.get('mode');
-    if (mode === 'sandbox' || mode === 'wave') {
+    if (mode === 'story') {
+      this.startMode('story', {});
+    } else if (mode === 'sandbox' || mode === 'wave') {
       const wave = Number(params.get('wave'));
       this.startMode(mode, wave > 0 ? { startWave: Math.floor(wave) } : {});
     } else {
@@ -70,7 +75,7 @@ export class GameStateManager implements ModeHost {
 
   toMenu(): void {
     this.teardown();
-    this.menu = new MainMenu(this.engine, (kind) => this.defer(() => this.startMode(kind, {})));
+    this.menu = new MainMenu(this.engine, (kind, opts) => this.defer(() => this.startMode(kind, opts ?? {})));
     this.state = 'MainMenu';
   }
 

@@ -27,6 +27,12 @@ export interface PoiSession extends PoiRuntime {
 /** Builds the running map for a POI (loading may take several frames). */
 export type SessionFactory = (poi: PoiDef, map: PoiMap, player: Player) => Promise<PoiSession>;
 
+/** The quests riding along (engine-agnostic): told of places entered and left, and where you're headed. */
+export interface PlaythroughQuests {
+  emit(e: { type: 'poiEntered' | 'poiLeft'; poi: string }): void;
+  prefetchFor(poi: string): void;
+}
+
 /** Someone who travels along with the player (future companions): told when they leave and arrive. */
 export interface Follower {
   leave(from: PoiSession): void;
@@ -72,6 +78,10 @@ export class Playthrough {
   session: PoiSession | null = null;
   traveling = false;
   disposed = false;
+  /** The quests of this playthrough (they survive every POI switch). */
+  quests: PlaythroughQuests | null = null;
+  /** The exit you last arrived at (null: the start / a respawn spot). */
+  arrivedAt: string | null = null;
   /** New places or trails learnt of (with the whole state, to save). */
   onReveal: (r: Reveal[], all: DiscoveryData) => void = () => {};
 
@@ -79,19 +89,25 @@ export class Playthrough {
     readonly world: WorldDef,
     private registry: PoiMapRegistry,
     private factory: SessionFactory,
-    opts: { player?: Player; purse: Purse; discovery?: DiscoveryData },
+    opts: { player?: Player; purse: Purse; discovery?: DiscoveryData; at?: { poi: string; exit: string | null } },
   ) {
     this.player = opts.player ?? new Player();
     this.purse = opts.purse;
     this.discovery = new Discovery(world, opts.discovery);
-    this.poi = world.start.poi;
+    // Continuing a story: where you were (if that place still exists), else the world's start.
+    const at = opts.at && world.pois.some((p) => p.id === opts.at!.poi) ? opts.at : null;
+    this.poi = at?.poi ?? world.start.poi;
+    this.arrivedAt = at?.exit ?? null;
   }
 
   get here(): PoiDef {
     return poiById(this.world, this.poi);
   }
 
-  /** Load the starting place; the horse waits at its spawn there. */
+  /**
+   * Load the starting place (or where a story was left: at the exit you last arrived through);
+   * the horse waits at its spawn there.
+   */
   async start(): Promise<PoiSession> {
     const poi = this.here;
     const map = await this.registry.load(poi.id);
@@ -99,8 +115,9 @@ export class Playthrough {
     if (map.horses) s.setLooseHorses(map.horses);
     const m = s.map;
     if (m.horseSpawn) this.horseAt = { poi: poi.id, pos: [m.horseSpawn.x, m.horseSpawn.z], yaw: m.horseYaw };
-    this.enter(s, null);
+    this.enter(s, poi.exits.find((e) => e.id === this.arrivedAt) ?? null);
     this.reveal(this.discovery.arrive(poi.id));
+    this.quests?.emit({ type: 'poiEntered', poi: poi.id });
     return s;
   }
 
@@ -192,6 +209,8 @@ export class Playthrough {
     this.snapshots.set(here.id, capturePoi(from));
     for (const f of this.followers) f.leave(from);
 
+    // While the ride plays: the destination's quest packs come in alongside its map.
+    this.quests?.prefetchFor(dest.id);
     const map = await this.registry.load(dest.id);
     const next = await this.factory(dest, map, this.player);
     if (this.disposed) {
@@ -199,7 +218,9 @@ export class Playthrough {
       return { ok: false, reason: 'busy' };
     }
     from.dispose();
+    this.quests?.emit({ type: 'poiLeft', poi: here.id });
     this.poi = dest.id;
+    this.arrivedAt = arrival.id;
     const snap = this.snapshots.get(dest.id);
     if (snap) applyPoi(next, snap);
     else if (map.horses) next.setLooseHorses(map.horses);
@@ -207,6 +228,7 @@ export class Playthrough {
     for (const f of this.followers) f.arrive(next, this.player.pos, arrival.facing);
     this.reveal(this.discovery.arrive(dest.id));
     this.traveling = false;
+    this.quests?.emit({ type: 'poiEntered', poi: dest.id });
     return { ok: true, session: next, poi: dest };
   }
 
@@ -266,6 +288,13 @@ export class Playthrough {
       return { ok: true, session: s, poi: dest };
     }
     return this.journey({ poi, exit: exitId }, null);
+  }
+
+  /** Learn of a trail (quests) and tell whoever listens. */
+  learnPath(path: string): Reveal[] {
+    const r = this.discovery.learnPath(path);
+    this.reveal(r);
+    return r;
   }
 
   /** Learn of a place (map scraps, directions) and tell whoever listens. */

@@ -157,6 +157,11 @@ export const CONFIG = {
     startingDollars: 150,
   },
 
+  story: {
+    /** Dollars at the start of a new story (the starting kit is the player's usual one). */
+    startingDollars: 60,
+  },
+
   wave: {
     /** The player's horse arrives at the start of the break after this wave. */
     horseUnlockWave: 3,

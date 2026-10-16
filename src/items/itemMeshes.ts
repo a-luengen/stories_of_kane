@@ -5,6 +5,7 @@ import { boxGeo, part } from '../render/materials';
 import { PAL } from '../render/palette';
 import { buildWeaponMesh } from '../entities/WeaponModel';
 import { clothingOf, weaponOf } from './ItemDef';
+import { buildQuestItemMesh } from './questItemMeshes';
 
 /**
  * The procedural mesh of an item in "display" orientation: weapons side-on pointing +X with the
@@ -40,6 +41,7 @@ export function buildItemMesh(def: ItemDef): THREE.Object3D {
     part(boxGeo(0.18, 0.05, 0.03), red, 0, 0.2, 0.2, out);
     return out;
   }
+  if (def.quest) return buildQuestItemMesh(def.quest.shape, def.quest.colors);
   if (def.category === 'goods') {
     goodsMesh(def.id, out);
     return out;

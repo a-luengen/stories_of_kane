@@ -55,7 +55,8 @@ export function drawPanel(ctx: CanvasRenderingContext2D, r: Rect, title: string)
   ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
   ctx.fillStyle = UI.leather;
   ctx.fillRect(x, y, w, h);
-  // Title plate.
+  // Title plate (none without a title: the caller draws its own, e.g. tabs).
+  if (!title) return;
   const tw = textWidth(title) + 8;
   const tx = Math.round(x + w / 2 - tw / 2);
   ctx.fillStyle = UI.ink;

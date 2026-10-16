@@ -174,6 +174,11 @@ export class SessionAudio {
   }
 
   /** An NPC says something: murmured in their voice and mood. Returns its length (seconds). */
+  /** A dialog line: murmured on the UI bus (it plays while the dialog pauses the world). */
+  speakInDialog(npc: Npc, text: string, mood: Mood): number {
+    return this.murmur(npc, npc.pos, text, this.voiceOf(npc), mood, true);
+  }
+
   speak(npc: Npc, text: string, mood: Mood): number {
     // A merchant's greeting comes as their shop opens: on the UI bus, which keeps playing while
     // the panel pauses the world.

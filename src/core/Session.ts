@@ -21,9 +21,11 @@ import type { ItemInstance } from '../items/ItemInstance';
 import { pickup } from '../items/transfer';
 import { drawToast, type WorldLabel } from '../ui/Hud';
 import { InventoryUI } from '../ui/InventoryUI';
+import type { JournalHost } from '../ui/JournalPanel';
 import { damp, dirToYaw } from '../util/math';
 import { segmentVsBox, type CircleCollider, type CollisionWorld, type Surface } from '../world/Colliders';
 import type { Occluder, WorldData } from '../world/props';
+import type { LootContainer } from '../world/Container';
 import type { HorseState, PoiRuntime } from '../world/poiState';
 import { WorldItemSystem, type WorldItem } from '../world/WorldItem';
 import { CoverDebug } from '../render/CoverDebug';
@@ -74,6 +76,12 @@ export interface SessionHooks {
   labels?(project: (x: number, y: number, z: number) => { x: number; y: number }): WorldLabel[];
   /** Mode HUD, drawn over the standard HUD (and under open panels). */
   drawHud?(ctx: CanvasRenderingContext2D, W: number, H: number, dt: number): void;
+  /** An NPC was brought in after the map was built (a quest NPC): wire it up like the rest. */
+  npcAdded?(npc: Npc): void;
+  /** A container was opened (looted or just looked into). */
+  onContainerOpened?(c: LootContainer): void;
+  /** The quest journal for the inventory's QUESTS tab (none: no tab). */
+  journal?: JournalHost;
   /** A map scrap was studied: put the place on the world map (no hook: scraps can't be read here). */
   study?(poi: string): void;
 }
@@ -177,6 +185,7 @@ export class Session implements PoiRuntime {
       c.onOpen = (box) => {
         this.sound.lidOpen(box.kind, box.position);
         this.openUi(() => this.ui.openLoot(box));
+        this.hooks.onContainerOpened?.(box);
       };
       c.onCollisionChanged = (box) => {
         const b = box.bounds;
@@ -207,6 +216,7 @@ export class Session implements PoiRuntime {
         icons: engine.icons,
         dropToWorld: (item) => this.dropToWorld(item),
         toast: (t) => this.showToast(t),
+        journal: hooks.journal,
         useItem: (item, from) => (itemDef(item.defId).reveals ? this.study(item, from) : this.player.useItem(item)),
       },
       engine.renderer,
@@ -247,6 +257,21 @@ export class Session implements PoiRuntime {
     a.model.onStep = (_, speed01) => this.sound.animalStep(a, speed01);
   }
 
+  /** Bring in an NPC that isn't part of the map (a quest NPC). */
+  spawnNpc(def: NpcDef): Npc {
+    const n = this.npcs.add(def);
+    this.registerNpc(n);
+    this.hooks.npcAdded?.(n);
+    return n;
+  }
+
+  /** Take an NPC out for good (quest over): body, guns it dropped and all. */
+  removeNpc(n: Npc): void {
+    this.targets.removeActor(n);
+    this.clearNpcDrops(n);
+    this.npcs.remove(n);
+  }
+
   /** Guns a dead NPC dropped, still lying on the ground (they go when the corpse does). */
   private npcDrops = new Map<Npc, WorldItem[]>();
 
@@ -283,6 +308,14 @@ export class Session implements PoiRuntime {
     const w = this.worldItems.placeAt(item, pos);
     w.onPickup = (wi) => this.pickUp(wi);
     if (npc) this.npcDrops.set(npc, [...(this.npcDrops.get(npc) ?? []), w]);
+  }
+
+  /** Take one item off the ground (quest cleanup). */
+  removeGroundItem(item: ItemInstance): void {
+    const w = this.worldItems.items.find((x) => x.item === item);
+    if (!w) return;
+    this.worldItems.remove(w);
+    for (const [n, list] of this.npcDrops) this.npcDrops.set(n, list.filter((x) => x !== w));
   }
 
   clearGroundItems(): void {
@@ -360,7 +393,9 @@ export class Session implements PoiRuntime {
     if (this.engine.input.consume('KeyB')) this.coverDebug.toggle();
     this.handleMenuKeys();
     if (this.ui.open) {
-      this.ui.update(frameDt, this.engine.pointer(), { rotate: this.engine.input.consume('KeyR'), shift: this.engine.input.sprint }, this.engine.lowW, this.engine.lowH);
+      const i = this.engine.input;
+      const tab = i.consume('Tab') || i.consume('KeyQ');
+      this.ui.update(frameDt, this.engine.pointer(), { rotate: i.consume('KeyR'), shift: i.sprint, tab }, this.engine.lowW, this.engine.lowH);
       this.render(frameDt, true);
       return;
     }
@@ -429,6 +464,11 @@ export class Session implements PoiRuntime {
       if (left < before) w.item.quantity = left;
     }
     this.player.syncEquipment();
+  }
+
+  /** A message is on screen (the next queued one waits). */
+  get toastShowing(): boolean {
+    return this.toast !== null;
   }
 
   /** Show a short message in the lower middle of the screen. */
@@ -910,8 +950,8 @@ export class Session implements PoiRuntime {
     this.hooks.drawHud?.(ctx, engine.lowW, engine.lowH, paused ? 0 : frameDt);
     if (this.ui.open) {
       this.ui.draw(ctx, engine.lowW, engine.lowH, engine.uiPointer);
-      // Panels cover the usual spot: messages from them (map updated, unloaded…) show below.
-      if (this.toast) drawToast(ctx, this.toast.text, engine.lowW, engine.lowH - 40);
+      // Panels cover the usual spot: messages (map updated, unloaded…) show at the top, which they leave free.
+      if (this.toast) drawToast(ctx, this.toast.text, engine.lowW, 4);
     }
     engine.debug.draw(frameDt, rig.view, this.riding ?? this.horses[0] ?? null, [
       `low-res ${engine.lowW}x${engine.lowH} x${engine.scale}  pixel ${engine.pixelate ? 'on' : 'off'}  palette ${engine.pixelPass.quantize ? 'on' : 'off'} [O]  outlines [L]`,

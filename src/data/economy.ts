@@ -11,5 +11,5 @@ export const ECONOMY = {
   /** Selling pays this fraction of the shop price (ammo: per round). */
   sellFraction: 0.5,
   /** Value of items the shop doesn't stock, for selling. */
-  fallbackPrice: { weapon: 60, ammo: 10, clothing: 20, consumable: 10, map: 5, goods: 5 },
+  fallbackPrice: { weapon: 60, ammo: 10, clothing: 20, consumable: 10, map: 5, goods: 5, quest: 0 },
 };

@@ -1,0 +1,193 @@
+{
+  "formatVersion": 1,
+  "id": "bounty-on-the-ridge",
+  "title": "Bounty on the Ridge",
+  "description": "Black Jack Doyle and two of his men are camped on a ridge east of town. The gunsmith pays $120 for proof that Doyle is done: the wanted poster he carries.",
+  "giver": "kanes-crossing:gunsmith",
+  "modes": ["story"],
+  "restartable": true,
+  "steps": [
+    {
+      "id": "ride",
+      "type": "goto",
+      "poi": "the-ridge",
+      "label": "The Ridge",
+      "objective": "Ride east to the Ridge"
+    },
+    {
+      "id": "fight",
+      "type": "defeat",
+      "group": "doyle-gang",
+      "count": 3,
+      "label": "Bandits",
+      "objective": "Deal with Doyle's gang at their camp",
+      "setup": [
+        { "type": "spawn", "npc": "the-ridge:doyle" },
+        { "type": "spawn", "npc": "the-ridge:gang-rifle" },
+        { "type": "spawn", "npc": "the-ridge:gang-shotgun" },
+        { "type": "placeItem", "item": "wanted-poster", "corpse": "the-ridge:doyle" }
+      ]
+    },
+    {
+      "id": "poster",
+      "type": "collect",
+      "item": "wanted-poster",
+      "label": "Wanted poster",
+      "objective": "Take the wanted poster from Doyle's body"
+    },
+    {
+      "id": "deliver",
+      "type": "deliver",
+      "npc": "kanes-crossing:gunsmith",
+      "item": "wanted-poster",
+      "objective": "Bring the poster to the gunsmith"
+    }
+  ],
+  "rewards": { "money": 120 },
+  "fail": [
+    { "type": "npcDies", "npc": "kanes-crossing:gunsmith", "reason": "The gunsmith is dead - nobody will pay the bounty" },
+    { "type": "itemLost", "item": "wanted-poster", "reason": "You lost the wanted poster" }
+  ],
+  "items": [
+    {
+      "id": "wanted-poster",
+      "name": "Wanted Poster",
+      "description": "WANTED: Black Jack Doyle. $120 reward. Proof enough for the gunsmith.",
+      "shape": "map",
+      "colors": { "main": "#e8cf9b", "accent": "#3f2a1c" },
+      "icon": "poster.png"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "doyle",
+      "poi": "the-ridge",
+      "spawn": [10, 5],
+      "group": "doyle-gang",
+      "archetype": "gunslinger",
+      "def": {
+        "name": "Black Jack Doyle",
+        "territory": { "at": [8, 2], "radius": 14 },
+        "lines": { "hostile": ["That's the bounty man!", "Doyle don't hang!"] }
+      }
+    },
+    {
+      "id": "gang-rifle",
+      "poi": "the-ridge",
+      "spawn": [4, -3],
+      "group": "doyle-gang",
+      "archetype": "rifleman",
+      "def": { "territory": { "at": [8, 2], "radius": 14 } }
+    },
+    {
+      "id": "gang-shotgun",
+      "poi": "the-ridge",
+      "spawn": [11, 0],
+      "group": "doyle-gang",
+      "archetype": "shotgunner",
+      "def": { "territory": { "at": [8, 2], "radius": 14 } }
+    }
+  ],
+  "dialogs": [
+    {
+      "id": "offer",
+      "npc": "kanes-crossing:gunsmith",
+      "if": [{ "type": "quest", "quest": "bounty-on-the-ridge", "status": "available" }],
+      "start": "job",
+      "nodes": [
+        {
+          "id": "job",
+          "text": "Got a job for someone handy with iron. Black Jack Doyle and his boys are camped up on the Ridge, east of here. There's a hundred and twenty dollars on his head.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "I'll bring him in.",
+              "do": [
+                { "type": "startQuest", "quest": "bounty-on-the-ridge" },
+                { "type": "reveal", "poi": "the-ridge" },
+                { "type": "revealPath", "path": "town-ridge" }
+              ],
+              "next": "proof"
+            },
+            { "text": "Where's this Ridge?", "next": "where" },
+            { "text": "Not my kind of work.", "next": "bye" }
+          ]
+        },
+        {
+          "id": "where",
+          "text": "Take the main street east out of town and keep going. You'll see the smoke from their fire.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "Then I'll ride.",
+              "do": [
+                { "type": "startQuest", "quest": "bounty-on-the-ridge" },
+                { "type": "reveal", "poi": "the-ridge" },
+                { "type": "revealPath", "path": "town-ridge" }
+              ],
+              "next": "proof"
+            },
+            { "text": "Not today.", "next": "bye" }
+          ]
+        },
+        {
+          "id": "proof",
+          "text": "Bring me the wanted poster he carries, as proof. And mind the rifleman - he shoots straight.",
+          "mood": "warn"
+        },
+        { "id": "bye", "text": "Then step aside for someone who'll do it.", "mood": "calm" }
+      ]
+    },
+    {
+      "id": "waiting",
+      "npc": "kanes-crossing:gunsmith",
+      "if": [
+        {
+          "type": "any",
+          "conds": [
+            { "type": "quest", "quest": "bounty-on-the-ridge", "status": "active", "step": "ride" },
+            { "type": "quest", "quest": "bounty-on-the-ridge", "status": "active", "step": "fight" },
+            { "type": "quest", "quest": "bounty-on-the-ridge", "status": "active", "step": "poster" }
+          ]
+        }
+      ],
+      "start": "still",
+      "nodes": [
+        {
+          "id": "still",
+          "text": "Doyle's still breathing, last I heard. East, past the end of the main street.",
+          "mood": "calm",
+          "choices": [{ "text": "On my way." }]
+        }
+      ]
+    },
+    {
+      "id": "handover",
+      "npc": "kanes-crossing:gunsmith",
+      "if": [{ "type": "quest", "quest": "bounty-on-the-ridge", "status": "active", "step": "deliver" }],
+      "start": "well",
+      "nodes": [
+        {
+          "id": "well",
+          "text": "Well? Is it done?",
+          "mood": "greet",
+          "choices": [
+            {
+              "text": "Doyle's done. Here's the poster.",
+              "if": [{ "type": "hasItem", "item": "wanted-poster" }],
+              "showLocked": true,
+              "do": [{ "type": "deliver" }],
+              "next": "paid"
+            },
+            { "text": "Not yet." }
+          ]
+        },
+        {
+          "id": "paid",
+          "text": "Black Jack Doyle... can't say anyone will miss him. Here's your money, and my thanks.",
+          "mood": "calm"
+        }
+      ]
+    }
+  ]
+}

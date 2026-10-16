@@ -93,6 +93,12 @@ export class Npc implements Target, Interactable {
   onRespawn: ((npc: Npc) => void) | null = null;
   /** Set by the session: murmur a line; returns how long it takes (the bubble lasts as long). */
   onSpeak: ((npc: Npc, text: string, mood: Mood) => number) | null = null;
+  /** Set by the mode: the player talked to this NPC (E). */
+  onTalk: ((npc: Npc) => void) | null = null;
+  /** Set by the mode: open a quest dialog instead of the usual greeting / hint / trade (true if it did). */
+  onQuestTalk: ((npc: Npc) => boolean) | null = null;
+  /** Set by the mode: a quest dialog is waiting (the prompt says "Talk" even at a merchant). */
+  hasQuestTalk: (() => boolean) | null = null;
   /** Set by the mode: is a place worth giving directions to (not visited yet)? */
   wantsHint: ((poi: string) => boolean) | null = null;
   /** Set by the mode: directions were given (the place goes on the map). */
@@ -272,7 +278,7 @@ export class Npc implements Target, Interactable {
 
   get label(): string {
     if (!this.alive) return `Loot ${this.name}${this.hasLoot ? '' : ' (empty)'}`;
-    return this.def.shop ? `Trade with ${this.name}` : `Talk to ${this.name}`;
+    return this.def.shop && !this.hasQuestTalk?.() ? `Trade with ${this.name}` : `Talk to ${this.name}`;
   }
 
   get promptHeight(): number {
@@ -293,6 +299,8 @@ export class Npc implements Target, Interactable {
       return;
     }
     this.talkLeft = CONFIG.npc.talkTime;
+    this.onTalk?.(this);
+    if (this.onQuestTalk?.(this)) return;
     const hint = this.def.hints?.find((h) => this.wantsHint?.(h.poi));
     if (hint) {
       this.say(hint.line, 'greet', CONFIG.npc.talkTime);

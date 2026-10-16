@@ -72,6 +72,8 @@ export class LootContainer implements Interactable {
   wave = Infinity;
   /** Loot has been rolled (on first open). */
   generated = false;
+  /** Stable id on its map (quests name it `<poi>:<id>`); `container-<n>` when the map doesn't name it. */
+  id = '';
   /** Item ids always found inside (a map scrap), placed before the rolled loot. */
   extras: string[] = [];
   /** Lid open (stays open once opened, until a restock closes it). */
@@ -163,7 +165,10 @@ export class LootContainer implements Interactable {
     this.ensureLoot();
     let items = this.inventory.items;
     if (unopened) {
-      // A seeded half of the finds survives (rounded up); the rest is splinters.
+      // A seeded half of the finds survives (rounded up); the rest is splinters. Whatever a quest
+      // put inside always survives.
+      const kept = items.filter((i) => i.questKey);
+      items = items.filter((i) => !i.questKey);
       const rng = new Rng(this.seed ^ 0x5bd1e995);
       const keep = Math.ceil(items.length * CONFIG.containers.scatterShare);
       const shuffled = [...items];
@@ -171,7 +176,7 @@ export class LootContainer implements Interactable {
         const j = rng.int(0, i + 1);
         [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
       }
-      items = shuffled.slice(0, keep);
+      items = [...kept, ...shuffled.slice(0, keep)];
     }
     for (const p of [...this.inventory.placements]) this.inventory.remove(p.item);
     this.breakApart();
@@ -442,8 +447,9 @@ export class ContainerSet {
   constructor(private seed: number) {}
 
   /** Create, collide and remember a container. */
-  add(cw: CollisionWorld, kind: ContainerKind, x: number, z: number, yaw = 0, size?: number): LootContainer {
+  add(cw: CollisionWorld, kind: ContainerKind, x: number, z: number, yaw = 0, size?: number, id?: string): LootContainer {
     const c = new LootContainer(kind, new THREE.Vector3(x, 0, z), yaw, (this.seed * 7919 + ++this.n * 104729) >>> 0, size ?? 0.8);
+    c.id = id ?? `container-${this.n}`;
     c.addCollider(cw);
     this.items.push(c);
     return c;

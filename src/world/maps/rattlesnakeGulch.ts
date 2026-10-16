@@ -9,7 +9,7 @@ import { StaticBatch } from '../../render/StaticBatch';
 import { Rng, valueNoise2 } from '../../util/math';
 import { CollisionWorld } from '../Colliders';
 import { ContainerSet } from '../Container';
-import { buildGround, cactus, cliff, rock, shade, shrub, trailExits, type Occluder, type WorldData } from '../props';
+import { buildGround, cactus, campfire, cliff, rock, shade, shrub, tent, trailExits, type Occluder, type WorldData } from '../props';
 import { fadeableToon } from '../../render/materials';
 
 const HALF = 40;
@@ -150,61 +150,6 @@ function mine(b: StaticBatch, cw: CollisionWorld, x: number, z: number): void {
   // Spoil heap beside the entrance.
   for (let i = 0; i < 5; i++) b.put(new THREE.DodecahedronGeometry(0.7 + i * 0.12, 0), shade(PAL.rock, 0.8 + i * 0.05), x + 3 + i * 0.3, 0.2, z + 1.2 + (i % 2) * 0.6, i, i * 1.3, 0, 1, 0.5, 1);
   cw.addCircle(x + 3.6, z + 1.5, 1.4, 1.0, 'rock');
-}
-
-/** A canvas A-frame tent (opening towards `yaw`). */
-function tent(b: StaticBatch, cw: CollisionWorld, x: number, z: number, yaw: number, color: number): void {
-  const len = 2.6;
-  const w = 2.2;
-  const h = 1.7;
-  const slope = Math.atan2(h, w / 2);
-  const side = Math.hypot(h, w / 2);
-  const rx = Math.cos(yaw);
-  const rz = -Math.sin(yaw);
-  for (const s of [-1, 1]) {
-    // Each canvas side leans in from the ground to the ridge.
-    b.put(new THREE.BoxGeometry(0.06, side, len), s < 0 ? color : shade(color, 0.85), x + rx * s * (w / 4), h / 2, z + rz * s * (w / 4), 0, yaw, s * (Math.PI / 2 - slope));
-  }
-  b.put(new THREE.BoxGeometry(0.08, 0.08, len + 0.4), PAL.wood, x, h, z, 0, yaw, 0); // ridge pole
-  for (const s of [-1, 1]) b.box(0.08, h, 0.08, PAL.wood, x + Math.sin(yaw) * s * (len / 2 + 0.1), 0, z + Math.cos(yaw) * s * (len / 2 + 0.1));
-  b.box(0.7, 1.0, 0.04, PAL.ink, x + Math.sin(yaw) * (len / 2 - 0.02), 0, z + Math.cos(yaw) * (len / 2 - 0.02), yaw); // the dark opening
-  cw.addCircle(x, z, 1.2, h, 'wood', false);
-}
-
-/** A campfire: a ring of stones, crossed logs and a flickering flame (and its light). Returns the flicker. */
-function campfire(group: THREE.Group, b: StaticBatch, cw: CollisionWorld, x: number, z: number): (dt: number) => void {
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2;
-    b.box(0.26, 0.18, 0.22, PAL.rockDark, x + Math.cos(a) * 0.7, 0, z + Math.sin(a) * 0.7, a);
-  }
-  b.box(1.0, 0.14, 0.16, PAL.darkBrown, x, 0.05, z, 0.5);
-  b.box(1.0, 0.14, 0.16, PAL.darkBrown, x, 0.12, z, -0.7);
-  b.box(0.5, 0.04, 0.5, PAL.ink, x, 0, z);
-  cw.addCircle(x, z, 0.75, 0.3, 'rock', false);
-  // Logs to sit on.
-  for (const [dx, dz, r] of [[1.9, 0.3, 0.2], [-1.6, 1.2, 1.1], [0.2, -1.9, 1.6]] as const) {
-    b.put(new THREE.CylinderGeometry(0.22, 0.24, 1.4, 6), PAL.wood, x + dx, 0.22, z + dz, 0, r, Math.PI / 2);
-  }
-  const flame = new THREE.Group();
-  flame.position.set(x, 0.15, z);
-  group.add(flame);
-  const outer = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.8, 5), new THREE.MeshBasicMaterial({ color: PAL.orange }));
-  outer.position.y = 0.4;
-  const inner = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.55, 5), new THREE.MeshBasicMaterial({ color: PAL.brassLight }));
-  inner.position.y = 0.3;
-  flame.add(outer, inner);
-  const light = new THREE.PointLight(0xffa040, 1.6, 7, 1.5);
-  light.position.set(x, 1.0, z);
-  group.add(light);
-  let t = 0;
-  return (dt) => {
-    t += dt;
-    const f = 1 + Math.sin(t * 13) * 0.1 + Math.sin(t * 7.3) * 0.08;
-    outer.scale.set(1, f, 1);
-    inner.scale.set(1, 1.1 - (f - 1), 1);
-    outer.rotation.y += dt * 2;
-    light.intensity = 1.4 * f;
-  };
 }
 
 /** Rattlesnake Gulch: a dry canyon with an outlaw camp, the old mine and two trails out. */

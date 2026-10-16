@@ -191,6 +191,51 @@ export const SANDBOX_WORLD: WorldDef = {
 // ------------------------------------------------------------------------------------------------
 
 /**
+ * The story's world (first version): Kane's Crossing, and The Ridge east of it — a rocky outcrop
+ * with a bandit camp, joined by a trail from the east end of the town's main street. Same land
+ * as the sandbox's.
+ */
+export const STORY_WORLD: WorldDef = {
+  mode: 'story',
+  size: SANDBOX_WORLD.size,
+  base: SANDBOX_WORLD.base,
+  start: { poi: 'kanes-crossing' },
+  pois: [
+    {
+      ...SANDBOX_WORLD.pois[0],
+      exits: [{ id: 'east', at: [47, 0], half: [2.5, 3.5], arrive: [43.5, 0], facing: -Math.PI / 2 }],
+    },
+    {
+      id: 'the-ridge',
+      name: 'The Ridge',
+      type: 'camp',
+      pos: [236, 86],
+      map: 'the-ridge',
+      start: 'undiscovered',
+      description: 'A rocky outcrop above the plains. Smoke rises from a camp there most nights.',
+      exits: [{ id: 'west', at: [-29, 0], half: [2.5, 3.5], arrive: [-25.5, 0], facing: Math.PI / 2 }],
+    },
+  ],
+  paths: [
+    {
+      id: 'town-ridge',
+      from: { poi: 'kanes-crossing', exit: 'east' },
+      to: { poi: 'the-ridge', exit: 'west' },
+      route: [[150, 112], [174, 112], [198, 104], [218, 94], [236, 86]],
+      start: 'undiscovered',
+    },
+  ],
+  terrain: SANDBOX_WORLD.terrain,
+};
+
+/** The world of a mode (quest packs are checked against it). */
+export function worldOf(mode: 'sandbox' | 'story'): WorldDef {
+  return mode === 'story' ? STORY_WORLD : SANDBOX_WORLD;
+}
+
+// ------------------------------------------------------------------------------------------------
+
+/**
  * Check a world for broken data: unique ids, paths between existing exits, every POI reachable
  * from the start, every map builder registered. Returns the problems (empty = fine).
  */

@@ -10,6 +10,8 @@ export interface ItemInstance {
   rotated: boolean;
   /** Weapons: rounds in the magazine (kept when moved, dropped or looted). */
   loadedRounds?: number;
+  /** Put in the world by a quest step (its setup key): picking it up is noticed. */
+  questKey?: string;
 }
 
 let nextUid = 1;
@@ -45,6 +47,7 @@ export interface ItemData {
   quantity: number;
   rotated: boolean;
   loadedRounds?: number;
+  questKey?: string;
 }
 
 /** An item in a grid cell, as plain data. */
@@ -56,11 +59,13 @@ export interface PlacedItemData extends ItemData {
 export function itemToData(item: ItemInstance): ItemData {
   const d: ItemData = { defId: item.defId, quantity: item.quantity, rotated: item.rotated };
   if (item.loadedRounds !== undefined) d.loadedRounds = item.loadedRounds;
+  if (item.questKey !== undefined) d.questKey = item.questKey;
   return d;
 }
 
 export function itemFromData(d: ItemData): ItemInstance {
   const item = createItem(d.defId, d.quantity, d.loadedRounds);
   item.rotated = d.rotated;
+  if (d.questKey !== undefined) item.questKey = d.questKey;
   return item;
 }

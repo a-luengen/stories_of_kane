@@ -6,6 +6,7 @@ import { pixelsToOutlinedCanvas } from '../render/pixelCanvas';
 import { itemDef } from './ItemDef';
 import { buildItemMesh } from './itemMeshes';
 import { drawSprite, spriteInSheet, SpriteSheets } from './spriteIcon';
+import { FLAT_SHAPES } from './questItemMeshes';
 
 /**
  * Renders each item's procedural mesh to a small offscreen canvas in the game's pixel style
@@ -43,6 +44,8 @@ export class IconRenderer {
     if (!c) {
       c = this.make(defId, pxPerCell);
       this.cache.set(key, c);
+      const url = itemDef(defId).quest?.iconUrl;
+      if (url) this.overlayPng(c, url);
     }
     return c;
   }
@@ -77,6 +80,27 @@ export class IconRenderer {
     return false;
   }
 
+  /**
+   * A pack's PNG icon replaces the drawn one once it has loaded (drawn into the same canvas, so
+   * whoever holds it shows the new icon). If it can't be loaded, the drawn one stays.
+   */
+  private overlayPng(canvas: HTMLCanvasElement, url: string): void {
+    const img = new Image();
+    img.onload = () => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Fit, keeping the aspect, centred.
+      const s = Math.min(canvas.width / img.width, canvas.height / img.height);
+      const w = Math.round(img.width * s);
+      const h = Math.round(img.height * s);
+      ctx.drawImage(img, Math.floor((canvas.width - w) / 2), Math.floor((canvas.height - h) / 2), w, h);
+    };
+    img.onerror = () => console.warn(`[icons] couldn't load ${url}`);
+    img.src = url;
+  }
+
   private render(defId: string, px: number): HTMLCanvasElement {
     const def = itemDef(defId);
     const W = def.size.w * px;
@@ -86,7 +110,8 @@ export class IconRenderer {
 
     // Look from front-above-right (nearly side-on for weapons) and fit the ortho frustum to the item.
     // Map scraps lie flat: look down on them.
-    const dir = def.category === 'weapon' ? new THREE.Vector3(0.1, 0.35, 1) : def.reveals ? new THREE.Vector3(0.15, 1.6, 0.6) : new THREE.Vector3(0.45, 0.55, 1);
+    const flat = def.reveals || (def.quest && FLAT_SHAPES.has(def.quest.shape));
+    const dir = def.category === 'weapon' ? new THREE.Vector3(0.1, 0.35, 1) : flat ? new THREE.Vector3(0.15, 1.6, 0.6) : new THREE.Vector3(0.45, 0.55, 1);
     if (def.icon?.yaw) dir.applyAxisAngle(THREE.Object3D.DEFAULT_UP, def.icon.yaw);
     obj.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(obj);

@@ -100,6 +100,13 @@ export class Discovery {
     return { pois: Object.fromEntries(this.pois), paths: [...this.known] };
   }
 
+  /** Learning of a trail (quests): it's drawn, and both its ends are at least heard of. */
+  learnPath(id: string): Reveal[] {
+    const path = this.world.paths.find((p) => p.id === id);
+    if (!path) return [];
+    return [...this.hear(path.from.poi), ...this.hear(path.to.poi), ...this.knowPath(id)];
+  }
+
   private hear(poi: string): Reveal[] {
     return this.poi(poi) === 'undiscovered' ? this.setPoi(poi, 'hidden') : [];
   }

@@ -48,3 +48,40 @@ describe('story mode: continue or start over', () => {
     expect([...m.keys()]).toEqual(['sok.quests.sandbox']); // (the sandbox's save is its own)
   });
 });
+
+describe('story mode and the sandbox\'s places', () => {
+  it("the gunsmith's directions to Two Spurs Ranch (a sandbox place) don't apply: he just greets you", async () => {
+    storage();
+    const { NPCS } = await import('../data/npcs');
+    const { Npc } = await import('../entities/Npc');
+    const def = NPCS.find((d) => d.id === 'gunsmith')!;
+    const gunsmith = new Npc(def);
+    const m = new StoryMode(engine);
+    (m as unknown as { giveDirections(s: unknown): void }).giveDirections({ npcs: { npcs: [gunsmith] } });
+    expect(() => gunsmith.interact()).not.toThrow();
+    expect(def.lines!.greet).toContain(gunsmith.speech);
+    expect(m.playthrough.discovery.save().pois).not.toHaveProperty('two-spurs-ranch');
+  });
+
+  it("the town's map scrap to the gulch isn't in the story's chest (the sandbox keeps it)", async () => {
+    const { buildSandboxMap } = await import('../world/maps/sandbox');
+    const { TargetSystem } = await import('../entities/Targets');
+    const { dropForeignMapScraps } = await import('./FrontierMode');
+    const { SANDBOX_WORLD, STORY_WORLD } = await import('../data/world');
+    const scraps = (w: typeof SANDBOX_WORLD) => {
+      const town = buildSandboxMap(new TargetSystem());
+      dropForeignMapScraps(town.containers, w);
+      return town.containers.flatMap((c) => c.extras);
+    };
+    expect(scraps(SANDBOX_WORLD)).toEqual(['map_scrap_gulch']);
+    expect(scraps(STORY_WORLD)).toEqual([]);
+  });
+
+  it('discovery ignores places another mode has', async () => {
+    const { Discovery } = await import('../world/Discovery');
+    const { STORY_WORLD } = await import('../data/world');
+    const d = new Discovery(STORY_WORLD);
+    expect(d.learn('two-spurs-ranch')).toEqual([]);
+    expect(d.save().pois).not.toHaveProperty('two-spurs-ranch');
+  });
+});

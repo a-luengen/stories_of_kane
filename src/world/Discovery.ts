@@ -108,6 +108,8 @@ export class Discovery {
   }
 
   private hear(poi: string): Reveal[] {
+    // (A place that isn't in this world — another mode's — can't be heard of here.)
+    if (!this.world.pois.some((p) => p.id === poi)) return [];
     return this.poi(poi) === 'undiscovered' ? this.setPoi(poi, 'hidden') : [];
   }
 

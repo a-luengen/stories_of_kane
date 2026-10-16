@@ -19,6 +19,7 @@ import { loadDiscovery, saveDiscovery } from '../world/discoveryStore';
 import { routePoints, type Hop } from '../world/routes';
 import { gameplay } from '../settings/gameplay';
 import { WorldMapScreen } from '../ui/worldmap/WorldMapScreen';
+import type { LootContainer } from '../world/Container';
 import { WorldDebug, type WorldDebugAction } from '../ui/worldmap/WorldDebug';
 import { QuestDebug, type QuestDebugAction } from '../ui/QuestDebug';
 import { PREFETCH_RADIUS, QuestSystem } from '../quests/QuestSystem';
@@ -222,6 +223,7 @@ export class FrontierMode implements GameMode {
     await nextFrame();
     const targets = new TargetSystem();
     const world = map.build(targets, poi.exits);
+    dropForeignMapScraps(world.containers, this.world);
     await nextFrame();
     const nav = await NavGrid.build(world.collision, world.half, nextFrame);
     await nextFrame();
@@ -282,17 +284,24 @@ export class FrontierMode implements GameMode {
     }
   }
 
-  /** NPCs with `hints` tell you the way to places you haven't been (and they go on your map). */
+  /**
+   * NPCs with `hints` tell you the way to places you haven't been (and they go on your map) — only
+   * to places in this mode's world (the story's gunsmith knows of no Two Spurs Ranch).
+   */
   private giveDirections(s: Session): void {
     for (const npc of s.npcs.npcs) {
       if (!npc.def.hints) continue;
-      npc.wantsHint = (poi) => this.playthrough.discovery.poi(poi) !== 'visible';
+      npc.wantsHint = (poi) => inWorld(this.world, poi) && this.playthrough.discovery.poi(poi) !== 'visible';
       npc.onHint = (_, poi) => this.playthrough.learn(poi);
     }
   }
 
   /** A map scrap was studied. */
   private study(poi: string): void {
+    if (!inWorld(this.world, poi)) {
+      this.toast('The map shows nowhere you know');
+      return;
+    }
     if (this.playthrough.learn(poi).length === 0) this.toast(`Nothing new: ${poiById(this.world, poi).name} is on your map`);
   }
 
@@ -785,4 +794,19 @@ function exitZones(exits: readonly ExitDef[]): THREE.Group {
     }
   }
   return g;
+}
+
+const inWorld = (w: WorldDef, poi: string) => w.pois.some((p) => p.id === poi);
+
+/**
+ * Maps are shared between modes (the story's town is the sandbox's): a map scrap of a place this
+ * world doesn't have (the gulch, in the story) is taken out of the containers that would hold it.
+ */
+export function dropForeignMapScraps(containers: readonly LootContainer[], world: WorldDef): void {
+  for (const c of containers) {
+    c.extras = c.extras.filter((id) => {
+      const poi = itemDef(id).reveals;
+      return !poi || inWorld(world, poi);
+    });
+  }
 }

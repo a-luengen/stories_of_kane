@@ -143,8 +143,13 @@ describe('quest items', () => {
     expect(hasItemDef('it-poster')).toBe(false);
     registerQuestItems(p, '/base/quests/');
     expect(itemDef('it-poster')).toMatchObject({ category: 'quest', size: { w: 1, h: 1 }, quest: { id: 'icons-test', shape: 'map', iconUrl: '/base/quests/icons-test/icons/poster.png', questItem: true, keepAfterQuest: false } });
-    // Once registered, a pack can't define it again.
-    expect(validatePack(p, { pois: new Set(['kanes-crossing']), paths: new Set(), itemExists: hasItemDef }, 'icons-test').ok).toBe(false);
+    // Once registered: the same pack loads again fine (a later playthrough), another can't take the id.
+    const ctx = { pois: new Set(SANDBOX_WORLD.pois.map((x) => x.id)), paths: new Set<string>(), itemExists: (id: string, pack?: string) => hasItemDef(id) && itemDef(id).quest?.id !== pack };
+    const same = validatePack(p, ctx, 'icons-test');
+    expect(same.ok ? [] : same.errors).toEqual([]);
+    const other = { ...p, id: 'other-quest' };
+    const v = validatePack(other, ctx, 'other-quest');
+    expect(v.ok ? [] : v.errors).toEqual(['quest "other-quest": items[0].id: "it-poster" clashes with an existing item']);
   });
 
   it('every shape has a procedural look', () => {

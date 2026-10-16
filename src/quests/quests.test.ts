@@ -583,3 +583,17 @@ describe('quest NPCs spawned by actions', () => {
     expect(world.spawned).toEqual([]);
   });
 });
+
+describe('a second playthrough in the same page', () => {
+  it('loads a pack whose items an earlier playthrough already registered (restart, another mode)', async () => {
+    const p = pack('reloaded', { items: [{ id: 'reloaded-letter', name: 'Letter', description: 'x', shape: 'letter' }] });
+    const start = async () => {
+      const srv = server([p]);
+      const qs = new QuestSystem({ mode: 'sandbox', world: SANDBOX_WORLD, game: new FakeWorld(), get: srv.get, base: '/q/', saved: null, persist: false, hooks: {} });
+      await qs.whenReady();
+      return qs.loader.load('reloaded', 'start');
+    };
+    expect(await start()).not.toBeNull();
+    expect(await start()).not.toBeNull(); // (the item is still registered from the first time)
+  });
+});

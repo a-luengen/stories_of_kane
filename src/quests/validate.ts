@@ -4,8 +4,12 @@ import { QUEST_FORMAT_VERSION, type QuestCatalog, type QuestPack } from './types
 export interface ValidationContext {
   pois: ReadonlySet<string>;
   paths: ReadonlySet<string>;
-  /** Items outside the pack (the game's own, or other loaded packs'). */
-  itemExists(id: string): boolean;
+  /**
+   * Is there already an item with this id outside the pack (the game's own, or another pack's)?
+   * With `pack`: items that pack registered itself don't count (it was loaded before in this page,
+   * by an earlier playthrough).
+   */
+  itemExists(id: string, pack?: string): boolean;
 }
 
 export type Validated<T> = { ok: true; value: T } | { ok: false; errors: string[] };
@@ -113,7 +117,7 @@ export function validatePack(raw: unknown, ctx: ValidationContext, expectedId?: 
     const iid = c.str(it, 'id', path);
     if (iid) {
       if (packItems.has(iid)) c.err(`${path}.id`, `"${iid}" is defined twice`);
-      else if (ctx.itemExists(iid)) c.err(`${path}.id`, `"${iid}" clashes with an existing item`);
+      else if (ctx.itemExists(iid, pid)) c.err(`${path}.id`, `"${iid}" clashes with an existing item`);
       packItems.add(iid);
     }
     c.str(it, 'name', path);

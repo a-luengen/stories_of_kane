@@ -1,15 +1,29 @@
 import { PAL } from '../render/palette';
-import type { AppearanceConfig, EquipSlot } from './types';
+import type { AppearanceConfig, EquipSlot, WeaponDef } from './types';
+import { WEAPONS } from './weapons';
 
 export type ArchetypeId = 'gunslinger' | 'rifleman' | 'shotgunner';
 
 /** How an enemy fights (on top of its weapon's preferred range). */
 export type Tactics = 'strafe' | 'cover' | 'rush';
 
+/** A weapon an archetype may spawn with instead of its usual one. */
+export interface WeaponOption {
+  weapon: string;
+  /** Relative to the usual weapon's weight of 1. */
+  weight: number;
+  /** Wave mode: only from this wave on. */
+  fromWave?: number;
+  /** Always a second gun in the off hand (two sawed-offs); otherwise dual wielding as usual. */
+  offHand?: string;
+}
+
 export interface EnemyArchetype {
   id: ArchetypeId;
   /** Weapon on foot. */
   weapon: string;
+  /** Other weapons it may carry on foot (picked per spawn, see `pickEnemyWeapon`). */
+  weaponOptions?: WeaponOption[];
   /** Weapon on horseback (null: never spawns mounted). */
   mountedWeapon: string | null;
   /** Second guns for the dual wielders (EnemySpawn.dual), picked at random. */
@@ -42,7 +56,12 @@ export const ENEMIES: Record<ArchetypeId, EnemyArchetype> = {
     id: 'gunslinger',
     weapon: 'revolver',
     mountedWeapon: 'revolver',
-    offHandWeapons: ['revolver', 'revolver', 'derringer'],
+    offHandWeapons: ['revolver', 'revolver', 'nickel_revolver', 'derringer'],
+    weaponOptions: [
+      { weapon: 'nickel_revolver', weight: 0.6, fromWave: 3 },
+      // The rare heavy hitter of the later waves.
+      { weapon: 'magnum', weight: 0.15, fromWave: 7 },
+    ],
     tactics: 'strafe',
     hp: 90,
     inaccuracy: 2.4,
@@ -65,6 +84,8 @@ export const ENEMIES: Record<ArchetypeId, EnemyArchetype> = {
     id: 'shotgunner',
     weapon: 'shotgun',
     mountedWeapon: 'shotgun',
+    // From the mid waves some come with a sawed-off in each hand.
+    weaponOptions: [{ weapon: 'sawed_off', offHand: 'sawed_off', weight: 0.5, fromWave: 4 }],
     tactics: 'rush',
     hp: 110,
     inaccuracy: 1.2,
@@ -73,6 +94,34 @@ export const ENEMIES: Record<ArchetypeId, EnemyArchetype> = {
     wardrobe: BANDIT,
   },
 };
+
+/**
+ * What an enemy of this archetype carries on foot in a wave: its usual weapon or one of its
+ * options (weighted), and a second gun if the option brings one. Riders use `mountedWeapon`.
+ */
+export function pickEnemyWeapon(a: EnemyArchetype, wave: number, rand = Math.random): { weapon: string; offHand?: string } {
+  const options = (a.weaponOptions ?? []).filter((o) => wave >= (o.fromWave ?? 1));
+  let r = rand() * (1 + options.reduce((n, o) => n + o.weight, 0));
+  for (const o of options) {
+    r -= o.weight;
+    if (r < 0) return o.offHand ? { weapon: o.weapon, offHand: o.offHand } : { weapon: o.weapon };
+  }
+  return { weapon: a.weapon };
+}
+
+/**
+ * An enemy's guns: riders carry `mountedWeapon`; on foot the usual gun or an option, plus a
+ * second gun if the option brings one, or if it's a dual wielder with a gun that pairs (never
+ * the magnum).
+ */
+export function enemyLoadout(a: EnemyArchetype, wave: number, o: { mounted?: boolean; dual?: boolean }, rand = Math.random): { weapon: string; offHand: string | null } {
+  if (o.mounted) return { weapon: a.mountedWeapon ?? a.weapon, offHand: null };
+  const pick = pickEnemyWeapon(a, wave, rand);
+  if (pick.offHand) return { weapon: pick.weapon, offHand: pick.offHand };
+  const pairs = (WEAPONS as Record<string, WeaponDef>)[pick.weapon]?.dualWieldable === true;
+  const offHand = o.dual && pairs && a.offHandWeapons?.length ? a.offHandWeapons[Math.floor(rand() * a.offHandWeapons.length)] : null;
+  return { weapon: pick.weapon, offHand };
+}
 
 const SKINS = [PAL.skin, PAL.skinDark, 0xc48a66];
 const HAIR = [PAL.ink, PAL.darkBrown, PAL.brown, PAL.woodLight];

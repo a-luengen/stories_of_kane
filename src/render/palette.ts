@@ -36,6 +36,11 @@ export const PAL = {
   glassBrown: 0x8a5a2a,
   denim: 0x4b5f7a,
   white: 0xfff6dc,
+  /** Polished nickel (the only cool, neutral light tones: everything else is warm). */
+  silver: 0xbcc0c4,
+  silverLight: 0xe2e4e6,
+  /** Blued gun steel. */
+  blued: 0x2e3440,
 } as const;
 
 /** Palette entries the quantizer snaps to. Includes a few in-between tones for toon shading steps. */
@@ -78,6 +83,8 @@ export const QUANT_PALETTE: number[] = [
   PAL.rock,
   PAL.rockLight,
   PAL.metal,
+  PAL.silver,
+  PAL.silverLight,
   PAL.metalLight,
   PAL.brass,
   PAL.brassLight,

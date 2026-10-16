@@ -23,12 +23,16 @@ export const LOOT_TABLES: Record<LootTableId, LootEntry[]> = {
     { item: 'ammo_revolver', weight: 5, qty: [6, 18] },
     { item: 'ammo_rifle', weight: 3, qty: [4, 10] },
     { item: 'ammo_shells', weight: 3, qty: [3, 8] },
+    { item: 'ammo_magnum', weight: 1, qty: [4, 12], minWave: 5 },
   ],
   weaponsOnly: [
     { item: 'revolver', weight: 6 },
     { item: 'derringer', weight: 4, minWave: 2 },
     { item: 'rifle', weight: 3, minWave: 2 },
     { item: 'shotgun', weight: 2, minWave: 4 },
+    { item: 'nickel_revolver', weight: 2, minWave: 3 },
+    { item: 'sawed_off', weight: 1.5, minWave: 3 },
+    { item: 'magnum', weight: 0.6, minWave: 5 },
   ],
   general: [
     { item: 'ammo_revolver', weight: 4, qty: [4, 14] },
@@ -42,5 +46,10 @@ export const LOOT_TABLES: Record<LootTableId, LootEntry[]> = {
     { item: 'derringer', weight: 0.5, minWave: 2 },
     { item: 'rifle', weight: 0.3, minWave: 2 },
     { item: 'shotgun', weight: 0.2, minWave: 4 },
+    // (Guns stay under a tenth of the finds here.)
+    { item: 'nickel_revolver', weight: 0.09, minWave: 3 },
+    { item: 'sawed_off', weight: 0.07, minWave: 3 },
+    { item: 'magnum', weight: 0.03, minWave: 5 },
+    { item: 'ammo_magnum', weight: 0.4, qty: [4, 10], minWave: 5 },
   ],
 };

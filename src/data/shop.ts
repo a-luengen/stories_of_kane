@@ -10,16 +10,23 @@ export interface ShopEntry {
   unlockWave: number;
 }
 
-/** The merchant's stock. Ammo is always available; better guns unlock as the waves go on. */
+/**
+ * The wave merchant's stock. Ammo is always available (the magnum's comes with the magnum);
+ * better guns unlock as the waves go on.
+ */
 export const SHOP: ShopEntry[] = [
   { item: 'ammo_revolver', price: 12, quantity: 18, unlockWave: 1 },
   { item: 'ammo_rifle', price: 16, quantity: 10, unlockWave: 1 },
   { item: 'ammo_shells', price: 14, quantity: 6, unlockWave: 1 },
+  { item: 'ammo_magnum', price: 20, quantity: 12, unlockWave: 5 },
   { item: 'bandage', price: 20, quantity: 1, unlockWave: 1 },
   { item: 'revolver', price: 60, quantity: 1, unlockWave: 1 },
   { item: 'derringer', price: 45, quantity: 1, unlockWave: 2 },
+  { item: 'nickel_revolver', price: 110, quantity: 1, unlockWave: 3 },
+  { item: 'sawed_off', price: 95, quantity: 1, unlockWave: 3 },
   { item: 'rifle', price: 120, quantity: 1, unlockWave: 2 },
   { item: 'shotgun', price: 150, quantity: 1, unlockWave: 4 },
+  { item: 'magnum', price: 180, quantity: 1, unlockWave: 5 },
   // Cosmetics.
   ...['cowboy_hat_tan', 'cowboy_hat_black', 'duster_sand', 'duster_black', 'vest_brown', 'bandana_black', 'chaps_wood', 'boots_black', 'shirt_denim'].map((id) => ({
     item: id,
@@ -56,10 +63,14 @@ export const MERCHANT_SHOPS: Record<string, MerchantShop> = {
     title: 'GUNS & AMMO',
     stock: [
       { item: 'revolver', price: 60, quantity: 1, unlockWave: 1 },
+      { item: 'nickel_revolver', price: 110, quantity: 1, unlockWave: 1 },
+      { item: 'magnum', price: 180, quantity: 1, unlockWave: 1 },
       { item: 'derringer', price: 45, quantity: 1, unlockWave: 1 },
+      { item: 'sawed_off', price: 95, quantity: 1, unlockWave: 1 },
       { item: 'rifle', price: 120, quantity: 1, unlockWave: 1 },
       { item: 'shotgun', price: 150, quantity: 1, unlockWave: 1 },
       { item: 'ammo_revolver', price: 12, quantity: 18, unlockWave: 1 },
+      { item: 'ammo_magnum', price: 20, quantity: 12, unlockWave: 1 },
       { item: 'ammo_rifle', price: 16, quantity: 10, unlockWave: 1 },
       { item: 'ammo_shells', price: 14, quantity: 6, unlockWave: 1 },
       { item: 'bandage', price: 20, quantity: 1, unlockWave: 1 },

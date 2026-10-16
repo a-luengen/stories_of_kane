@@ -62,8 +62,10 @@ describe('loot tables', () => {
     const ids = (wave: number) => eligible(LOOT_TABLES.weaponsOnly, wave).map((e) => e.item);
     expect(ids(1)).toEqual(['revolver']);
     expect(ids(2)).toEqual(['revolver', 'derringer', 'rifle']);
-    expect(ids(4)).toEqual(['revolver', 'derringer', 'rifle', 'shotgun']);
-    expect(ids(Infinity)).toEqual(ids(4)); // sandbox: everything
+    expect(ids(3)).toEqual(['revolver', 'derringer', 'rifle', 'nickel_revolver', 'sawed_off']);
+    expect(ids(4)).toEqual(['revolver', 'derringer', 'rifle', 'shotgun', 'nickel_revolver', 'sawed_off']);
+    expect(ids(5)).toEqual([...ids(4), 'magnum']);
+    expect(ids(Infinity)).toEqual(ids(5)); // sandbox: everything
     const general = eligible(LOOT_TABLES.general, 1).map((e) => e.item);
     expect(general).not.toContain('rifle');
     expect(general).toContain('bandage');
@@ -79,11 +81,11 @@ describe('loot tables', () => {
 
   it('finds that do not fit are skipped', () => {
     const rng = new Rng(4);
-    // A rifle (4×1) can never fit a 2×2 grid; revolvers (2×2) fill it once.
+    // A rifle (4×1) can never fit a 2×2 grid; a 2×2 gun (a revolver, the magnum, a sawed-off) fills it once.
     const tiny = new GridContainer(2, 2);
     const placed = fillWithLoot(tiny, 'weaponsOnly', 30, rng, Infinity);
     expect(placed.length).toBe(1);
-    expect(tiny.items.map((i) => i.defId)).toEqual(['revolver']);
+    expect(['revolver', 'nickel_revolver', 'magnum', 'sawed_off']).toContain(tiny.items[0].defId);
     // Rotation fallback: a 4×1 grid takes a derringer (1×2) on its side, or a rifle flat.
     const flat = new GridContainer(4, 1);
     fillWithLoot(flat, 'weaponsOnly', 50, new Rng(5), 2);
@@ -175,9 +177,10 @@ describe('breakable boxes', () => {
     };
     return { cw, nav, c };
   };
-  const revolver = WEAPONS.revolver.damage;
+  // (A 25-damage pistol: the Nickel Revolver. The worn revolver needs a fifth shot.)
+  const revolver = WEAPONS.nickel_revolver.damage;
 
-  it('crates and ammo boxes take 4 revolver hits; the rest are indestructible', () => {
+  it('crates and ammo boxes take 4 Nickel Revolver hits (5 of the worn revolver); the rest are indestructible', () => {
     for (const kind of ['crate', 'ammoBox'] as const) {
       const { c } = placed(kind, 5);
       for (let i = 0; i < 3; i++) expect(c.damage(revolver)).toBeNull();

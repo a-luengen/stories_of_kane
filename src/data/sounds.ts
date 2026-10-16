@@ -114,6 +114,23 @@ export const RECIPES: Record<string, Recipe> = {
       tone('sine', 92, 30, 1, 0.32),
     ],
   },
+  /** Big-bore: a deeper, heavier boom with a long tail. */
+  gunMagnum: {
+    layers: [
+      noise(1, 0.07, { type: 'bandpass', freq: 2400, q: 0.7 }),
+      noise(1, 0.6, { type: 'lowpass', freq: 4200, freqEnd: 300 }),
+      tone('sine', 120, 32, 1, 0.3),
+      noise(0.3, 0.7, { type: 'lowpass', freq: 700 }, { delay: 0.04, attack: 0.03 }),
+    ],
+  },
+  /** Short barrels: a sharper crack than the shotgun, a shorter tail. */
+  gunSawedOff: {
+    layers: [
+      noise(0.9, 0.08, { type: 'bandpass', freq: 2300, q: 0.7 }),
+      noise(1, 0.45, { type: 'lowpass', freq: 4200, freqEnd: 280 }),
+      tone('sine', 100, 34, 1, 0.26),
+    ],
+  },
   gunDerringer: {
     layers: [
       noise(0.7, 0.05, { type: 'bandpass', freq: 4200, q: 0.8 }),
@@ -162,6 +179,24 @@ export const RECIPES: Record<string, Recipe> = {
       ...slideIn(0.85, 0.35),
       ...slideIn(1.35, 0.35),
       ...clack(2.1, 0.9), // snap shut
+    ],
+  },
+  /** Four heavy rounds, one at a time, the cylinder spun, closed. */
+  reloadMagnum: {
+    layers: [
+      ...metal(0.02, 1700, 0.45),
+      ...[0.35, 0.7, 1.05, 1.4].flatMap((t) => metal(t, 2600, 0.35)),
+      ...[1.6, 1.64, 1.68].flatMap((t) => metal(t, 3600, 0.15)),
+      ...metal(1.85, 1800, 0.55),
+    ],
+  },
+  /** Broken open, two shells fumbled into the short barrels, snapped shut (as long as its reload). */
+  reloadSawedOff: {
+    layers: [
+      ...clack(0.1, 0.8),
+      ...slideIn(1.4, 0.35),
+      ...slideIn(2.9, 0.35),
+      ...clack(4.5, 0.9),
     ],
   },
   reloadDerringer: { layers: [...clack(0.05, 0.4), ...metal(0.4, 3000, 0.3), ...metal(0.65, 3000, 0.3), ...clack(0.95, 0.5)] },
@@ -495,6 +530,8 @@ export const SOUNDS: Record<string, SoundDef> = {
   'gun.revolver': { bus: 'effects', recipe: 'gunRevolver', volume: 0.85, pitchVar: 0.05, ref: 6, maxDistance: 140, maxConcurrent: 6 },
   'gun.rifle': { bus: 'effects', recipe: 'gunRifle', volume: 0.95, pitchVar: 0.04, ref: 7, maxDistance: 160, maxConcurrent: 4 },
   'gun.shotgun': { bus: 'effects', recipe: 'gunShotgun', volume: 1, pitchVar: 0.04, ref: 6, maxDistance: 140, maxConcurrent: 4 },
+  'gun.magnum': { bus: 'effects', recipe: 'gunMagnum', volume: 1, pitchVar: 0.04, ref: 7, maxDistance: 170, maxConcurrent: 4 },
+  'gun.sawed_off': { bus: 'effects', recipe: 'gunSawedOff', volume: 1, pitchVar: 0.05, ref: 6, maxDistance: 140, maxConcurrent: 4 },
   'gun.derringer': { bus: 'effects', recipe: 'gunDerringer', volume: 0.7, pitchVar: 0.06, ref: 5, maxDistance: 110, maxConcurrent: 4 },
   'gun.echo': { bus: 'effects', recipe: 'gunEcho', volume: 0.7, ref: 10, maxDistance: 170, maxConcurrent: 4 },
   'gun.dry': { bus: 'effects', recipe: 'gunDry', volume: 0.6, ref: 2, maxDistance: 15, cooldown: 0.12 },
@@ -503,6 +540,8 @@ export const SOUNDS: Record<string, SoundDef> = {
   'reload.revolver': { bus: 'effects', recipe: 'reloadRevolver', volume: 0.6, ref: 2, maxDistance: 18, maxConcurrent: 3 },
   'reload.rifle': { bus: 'effects', recipe: 'reloadRifle', volume: 0.6, ref: 2, maxDistance: 18, maxConcurrent: 3 },
   'reload.shotgun': { bus: 'effects', recipe: 'reloadShotgun', volume: 0.6, ref: 2, maxDistance: 18, maxConcurrent: 3 },
+  'reload.magnum': { bus: 'effects', recipe: 'reloadMagnum', volume: 0.6, ref: 2, maxDistance: 18, maxConcurrent: 3 },
+  'reload.sawed_off': { bus: 'effects', recipe: 'reloadSawedOff', volume: 0.6, ref: 2, maxDistance: 18, maxConcurrent: 3 },
   'reload.derringer': { bus: 'effects', recipe: 'reloadDerringer', volume: 0.6, ref: 2, maxDistance: 18, maxConcurrent: 3 },
 
   'impact.dirt': { bus: 'effects', recipe: 'impactDirt', volume: 0.55, ref: 3, maxDistance: 40, maxConcurrent: 5 },

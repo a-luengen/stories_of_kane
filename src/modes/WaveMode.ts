@@ -6,7 +6,7 @@ import { CONFIG } from '../config';
 import type { Engine } from '../core/Engine';
 import type { ModeHost, ModeOptions } from '../core/GameStateManager';
 import { Session } from '../core/Session';
-import { banditAppearance, ENEMIES } from '../data/enemies';
+import { banditAppearance, ENEMIES, enemyLoadout } from '../data/enemies';
 import type { NpcDef } from '../data/types';
 import { resolveWeapon } from '../data/weapons';
 import { Horse } from '../entities/Horse';
@@ -222,7 +222,8 @@ export class WaveMode implements GameMode {
   private spawnEnemy(spawn: EnemySpawn, wave: number): void {
     const s = this.session;
     const a = ENEMIES[spawn.archetype];
-    const weaponId = spawn.mounted ? (a.mountedWeapon ?? a.weapon) : a.weapon;
+    // The usual gun or one of the archetype's options (a nickel revolver, two sawed-offs…).
+    const { weapon: weaponId, offHand } = enemyLoadout(a, wave, spawn);
     const ammo = ammoItemFor(resolveWeapon(weaponId)!.ammoType);
     const boxes = a.ammoBoxes[0] + Math.floor(Math.random() * (a.ammoBoxes[1] - a.ammoBoxes[0] + 1));
     const at = this.spawnPoint();
@@ -232,8 +233,8 @@ export class WaveMode implements GameMode {
       defendsOthers: false,
       appearance: banditAppearance(a),
       weapon: weaponId,
-      // Both guns are lootable (the off-hand uses the same rounds as a revolver).
-      offHandWeapon: spawn.dual && a.offHandWeapons ? a.offHandWeapons[Math.floor(Math.random() * a.offHandWeapons.length)] : null,
+      // Both guns are lootable (an off-hand gun takes the same rounds as the main one).
+      offHandWeapon: offHand,
       inventory: ammo ? Array.from({ length: boxes }, () => ({ item: ammo.id })) : [],
       spawn: [at.x, at.z],
       routine: { kind: 'idle', at: [at.x, at.z], facing: dirToYaw(-at.x, -at.z) },

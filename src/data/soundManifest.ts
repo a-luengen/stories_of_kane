@@ -13,6 +13,8 @@ export const SAMPLES: Record<string, string[]> = {
   'gun.rifle': [], // 'weapons/rifle_1.ogg', 'weapons/rifle_2.ogg'
   'gun.shotgun': [], // 'weapons/shotgun_1.ogg', 'weapons/shotgun_2.ogg'
   'gun.derringer': [], // 'weapons/derringer_1.ogg', 'weapons/derringer_2.ogg'
+  'gun.magnum': [], // 'weapons/magnum_1.ogg', 'weapons/magnum_2.ogg'
+  'gun.sawed_off': [], // 'weapons/sawed_off_1.ogg', 'weapons/sawed_off_2.ogg'
   'impact.dirt': [], // 'impacts/dirt_1.ogg' … 'impacts/dirt_3.ogg'
   'impact.wood': [], // 'impacts/wood_1.ogg' … 'impacts/wood_3.ogg'
   'impact.rock': [], // 'impacts/rock_1.ogg' … 'impacts/rock_3.ogg'

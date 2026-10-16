@@ -131,7 +131,7 @@ describe('dual wielding: eligibility', () => {
 describe('dual wielding: firing and reloading', () => {
   it('alternates right → left → right, each gun using its own rounds', () => {
     const { set } = pair();
-    const shots = hold(set, 0.6);
+    const shots = hold(set, 0.8);
     expect(shots.slice(0, 4).map((s) => s.hand)).toEqual(['right', 'left', 'right', 'left']);
     expect(set.right.ammo).toBe(6 - shots.filter((s) => s.hand === 'right').length);
     expect(set.left!.ammo).toBe(2 - shots.filter((s) => s.hand === 'left').length);

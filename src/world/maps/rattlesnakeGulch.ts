@@ -274,7 +274,7 @@ export function buildGulchMap(_targets: TargetSystem, exits: readonly ExitDef[])
 // ------------------------------------------------------------------------------------------------
 
 /** One outlaw holding the camp: an archetype's weapon, skill and look (seeded per outlaw). */
-function outlaw(id: string, archetype: ArchetypeId, spawn: Vec2, routine: NpcDef['routine'], seed: number): NpcDef {
+function outlaw(id: string, archetype: ArchetypeId, spawn: Vec2, routine: NpcDef['routine'], seed: number, weapon?: string): NpcDef {
   const a = ENEMIES[archetype];
   const rng = new Rng(seed);
   return {
@@ -282,7 +282,7 @@ function outlaw(id: string, archetype: ArchetypeId, spawn: Vec2, routine: NpcDef
     attitude: 'hostile',
     defendsOthers: true,
     appearance: banditAppearance(a, () => rng.next()),
-    weapon: a.weapon,
+    weapon: weapon ?? a.weapon,
     tactics: a.tactics,
     hp: a.hp,
     inaccuracy: a.inaccuracy,
@@ -298,7 +298,8 @@ function outlaw(id: string, archetype: ArchetypeId, spawn: Vec2, routine: NpcDef
 
 /** The outlaws holding the camp: two gunslingers, a rifleman on the rocks, a shotgunner by the tents. */
 export const GULCH_NPCS: NpcDef[] = [
-  outlaw('outlaw-fire', 'gunslinger', [CAMP[0] - 1.6, CAMP[1] + 1.8], { kind: 'idle', at: [CAMP[0] - 1.6, CAMP[1] + 1.8], facing: 2.4 }, 11),
+  // The one by the fire runs the camp: the best gun (worth taking off him).
+  outlaw('outlaw-fire', 'gunslinger', [CAMP[0] - 1.6, CAMP[1] + 1.8], { kind: 'idle', at: [CAMP[0] - 1.6, CAMP[1] + 1.8], facing: 2.4 }, 11, 'nickel_revolver'),
   outlaw('outlaw-patrol', 'gunslinger', [CAMP[0] - 6, CAMP[1] - 2], { kind: 'patrol', points: [[CAMP[0] - 7, CAMP[1] - 3], [CAMP[0] - 3, CAMP[1] + 9], [CAMP[0] + 4, CAMP[1] - 8]], pause: 3 }, 12),
   outlaw('outlaw-rifle', 'rifleman', [CAMP[0] + 6, CAMP[1] - 9], { kind: 'idle', at: [CAMP[0] + 6, CAMP[1] - 9], facing: -2.2 }, 13),
   outlaw('outlaw-shotgun', 'shotgunner', [CAMP[0] + 3, CAMP[1] + 7], { kind: 'idle', at: [CAMP[0] + 3, CAMP[1] + 7], facing: -1.4 }, 14),

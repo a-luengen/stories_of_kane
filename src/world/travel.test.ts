@@ -138,7 +138,7 @@ describe('places keep their state', () => {
     const firstItem = chest.inventory.items[0];
     chest.inventory.remove(firstItem); // looted one thing
     const crate = before.containers.find((c) => c.kind === 'crate')!;
-    for (let i = 0; i < 4; i++) crate.damage(WEAPONS.revolver.damage); // shot to pieces
+    for (let i = 0; i < 4; i++) crate.damage(WEAPONS.nickel_revolver.damage); // shot to pieces
     const gunman = before.npcList[0];
     gunman.hit(gunman.pos, gunman.pos, { damage: 999, shooter: null });
     before.placeItem(createItem('revolver', 1, 3), new THREE.Vector3(1, 0, 2), gunman);

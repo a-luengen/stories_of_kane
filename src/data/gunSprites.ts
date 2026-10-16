@@ -20,4 +20,7 @@ export interface GunSpriteDefinition {
 export const GUN_SPRITES: Record<string, GunSpriteDefinition> = {
   revolver: { sheetPath: 'sprites/guns.png', x: 0, y: 0, width: 32, height: 16 },
   rifle: { sheetPath: 'sprites/guns.png', x: 32, y: 0, width: 48, height: 12 },
+  nickel_revolver: { sheetPath: 'sprites/guns.png', x: 0, y: 16, width: 32, height: 16 },
+  magnum: { sheetPath: 'sprites/guns.png', x: 32, y: 16, width: 32, height: 16 },
+  sawed_off: { sheetPath: 'sprites/guns.png', x: 64, y: 16, width: 32, height: 16 },
 };

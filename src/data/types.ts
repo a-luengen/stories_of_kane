@@ -11,6 +11,10 @@ export interface WeaponLook {
   barrels: 1 | 2;
   metal: number;
   wood: number;
+  /** Pistols: a heavy revolver (big cylinder, thick ribbed barrel) or a shotgun cut down to a pistol. */
+  style?: 'magnum' | 'sawedOff';
+  /** Hammer and trigger in another colour (brass on a polished gun). */
+  trim?: number;
 }
 
 export interface WeaponDef {

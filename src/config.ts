@@ -111,6 +111,7 @@ export const CONFIG = {
     /** Max rounds per ammo stack, by ammo type. */
     ammoMaxStack: {
       revolverAmmo: 50,
+      magnumAmmo: 24,
       rifleAmmo: 20,
       shotgunShells: 12,
     } as Record<string, number>,

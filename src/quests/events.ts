@@ -4,6 +4,8 @@
  */
 export type QuestEvent =
   | { type: 'npcKilled'; poi: string; npc: string }
+  /** An animal died to a bullet (`byPlayer`: the player's). */
+  | { type: 'animalKilled'; poi: string; species: string; byPlayer: boolean }
   | { type: 'talkedTo'; poi: string; npc: string }
   | { type: 'itemAdded'; poi: string; item: string; count: number }
   /** `byQuest`: a quest took it (delivered / handed over), so it isn't "lost". */

@@ -91,9 +91,11 @@ export const SANDBOX_WORLD: WorldDef = {
       description: 'A dusty crossroads town with a saloon, a gunsmith and a tailor.',
       exits: [
         // East road, past the shooting range.
-        { id: 'east', at: [47, 0], half: [2.5, 3.5], arrive: [43.5, 0], facing: -Math.PI / 2 },
+        { id: 'east', at: [97, 0], half: [2.5, 3.5], arrive: [93.5, 0], facing: -Math.PI / 2 },
         // North trail, between the buildings and past the water tower.
-        { id: 'north', at: [0, -47], half: [3.5, 2.5], arrive: [0, -43.5], facing: 0 },
+        { id: 'north', at: [0, -97], half: [3.5, 2.5], arrive: [0, -93.5], facing: 0 },
+        // South, down the lane past the south street: the gun range.
+        { id: 'south', at: [0, 97], half: [3.5, 2.5], arrive: [0, 93.5], facing: Math.PI },
       ],
     },
     {
@@ -135,8 +137,25 @@ export const SANDBOX_WORLD: WorldDef = {
       description: 'Dry open plains west of the ranch. Bison graze there; wolves and a grizzly hunt them.',
       exits: [{ id: 'east', at: [37, 0], half: [2.5, 3.5], arrive: [33.5, 0], facing: -Math.PI / 2 }],
     },
+    {
+      id: 'gun-range',
+      name: 'Gun Range',
+      type: 'outpost',
+      pos: [150, 142],
+      map: 'gun-range',
+      start: 'hidden',
+      description: 'A shooting range south of town: targets at every distance, and a chest of every gun to try.',
+      exits: [{ id: 'north', at: [16, -37], half: [3.5, 2.5], arrive: [16, -33.5], facing: 0 }],
+    },
   ],
   paths: [
+    {
+      id: 'town-range',
+      from: { poi: 'kanes-crossing', exit: 'south' },
+      to: { poi: 'gun-range', exit: 'north' },
+      route: [[150, 112], [151, 122], [149, 132], [150, 142]],
+      start: 'hidden',
+    },
     {
       id: 'town-ranch',
       from: { poi: 'kanes-crossing', exit: 'north' },
@@ -203,7 +222,7 @@ export const STORY_WORLD: WorldDef = {
   pois: [
     {
       ...SANDBOX_WORLD.pois[0],
-      exits: [{ id: 'east', at: [47, 0], half: [2.5, 3.5], arrive: [43.5, 0], facing: -Math.PI / 2 }],
+      exits: [{ id: 'east', at: [97, 0], half: [2.5, 3.5], arrive: [93.5, 0], facing: -Math.PI / 2 }],
     },
     {
       id: 'the-ridge',

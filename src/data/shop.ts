@@ -43,6 +43,8 @@ export interface MerchantShop {
   stock: ShopEntry[];
   /** Item categories the merchant buys from you. */
   buys: ItemCategory[];
+  /** Within those categories, only these items (the butcher takes meat, the tanner hides). */
+  buysOnly?: string[];
 }
 
 const CLOTHING_PRICE: Record<ClothingSlot, number> = {
@@ -75,8 +77,40 @@ export const MERCHANT_SHOPS: Record<string, MerchantShop> = {
       { item: 'ammo_shells', price: 14, quantity: 6, unlockWave: 1 },
       { item: 'bandage', price: 20, quantity: 1, unlockWave: 1 },
     ],
-    // The gunsmith runs the trading post too: he takes meat, hides and feathers.
-    buys: ['weapon', 'ammo', 'consumable', 'goods'],
+    buys: ['weapon', 'ammo', 'consumable'],
+  },
+  // The gun range: rounds for every gun, at the range's price.
+  range: {
+    title: 'RANGE AMMO',
+    stock: [
+      { item: 'ammo_revolver', price: 6, quantity: 18, unlockWave: 1 },
+      { item: 'ammo_magnum', price: 10, quantity: 12, unlockWave: 1 },
+      { item: 'ammo_rifle', price: 8, quantity: 10, unlockWave: 1 },
+      { item: 'ammo_shells', price: 7, quantity: 6, unlockWave: 1 },
+    ],
+    buys: ['ammo'],
+  },
+  // The south quarter: meat to the butcher, hides and feathers to the tanner.
+  butcher: {
+    title: 'BUTCHER',
+    stock: [
+      { item: 'bandage', price: 18, quantity: 1, unlockWave: 1 },
+      { item: 'ammo_rifle', price: 16, quantity: 10, unlockWave: 1 },
+      { item: 'ammo_shells', price: 14, quantity: 6, unlockWave: 1 },
+    ],
+    buys: ['goods'],
+    buysOnly: ['meat'],
+  },
+  tanner: {
+    title: 'TANNER & LEATHER',
+    stock: (['belt_leather', 'holster_leather', 'vest_brown', 'chaps_wood', 'chaps_dark', 'boots_brown', 'boots_black', 'cowboy_hat_brown'] as const).map((id) => ({
+      item: id,
+      price: CLOTHING_PRICE[ClothingRegistry[id].slot],
+      quantity: 1,
+      unlockWave: 1,
+    })),
+    buys: ['goods'],
+    buysOnly: ['leather', 'pelt', 'bear_pelt', 'feathers'],
   },
   tailor: {
     title: 'CLOTHIER',

@@ -28,6 +28,25 @@ import type { AnimalSpawn } from '../../data/animals';
 
 const HALF = CONFIG.world.size / 2;
 
+/** The south quarter's street (z of its middle line). */
+export const SOUTH_STREET = 36;
+
+/** Its buildings, west to east: [x, width, depth, wall height, wall colour, sign colour]. */
+const SOUTH_ROW: [number, number, number, number, number, number][] = [
+  [-14, 7, 7, 3.6, PAL.red, PAL.cream], // the butcher's
+  [-5, 7, 7, 3.4, PAL.woodPale, PAL.darkBrown], // the tanner's
+  [8.5, 8, 7, 4.2, PAL.sandDark, PAL.brass], // the sheriff's office
+  [18, 6, 6, 3.2, PAL.woodLight, PAL.rust], // a house
+];
+
+const SOUTH_CONTAINERS: [Parameters<ContainerSet['add']>[1], number, number, number][] = [
+  ['barrel', -18.6, SOUTH_STREET - 5.2, 0],
+  ['barrel', -9.6, SOUTH_STREET - 4.6, 0],
+  ['crate', -1.2, SOUTH_STREET - 5.4, 0],
+  ['ammoBox', 12.9, SOUTH_STREET - 4.8, 0],
+  ['barrel', 21.6, SOUTH_STREET - 4.6, 0],
+];
+
 /**
  * Builds the desert town: ground, buildings, props, targets and colliders.
  *
@@ -44,7 +63,8 @@ export function buildSandboxMap(targets: TargetSystem, exits: readonly ExitDef[]
   const reserve = (x: number, z: number, r: number) => occupied.push({ x, z, r });
   const isFree = (x: number, z: number, r: number) => occupied.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + r);
 
-  group.add(buildGround(groundColor));
+  // (The ground reaches past the map's edge, under the rock ring.)
+  group.add(buildGround(groundColor, HALF * 2 + 60));
 
   // ---------------------------------------------------------------- town buildings
   // [position along the row, width, depth, wall height, wall colour, sign colour]
@@ -65,6 +85,12 @@ export function buildSandboxMap(targets: TargetSystem, exits: readonly ExitDef[]
   }
   for (const [z, w, d, h, wall, sign] of west) {
     occluders.push(building(cw, -19.5 - d / 2, z, Math.PI / 2, w, d, h, wall, sign, rng));
+  }
+  // The south quarter: a second street south of the main one, its north side built up (fronts
+  // facing the street and the camera), a lane up to the main street between the tanner's and the
+  // sheriff's.
+  for (const [x, w, d, h, wall, sign] of SOUTH_ROW) {
+    occluders.push(building(cw, x, SOUTH_STREET - 6.5 - d / 2, 0, w, d, h, wall, sign, rng));
   }
   for (const o of occluders) group.add(o.mesh);
 
@@ -108,10 +134,21 @@ export function buildSandboxMap(targets: TargetSystem, exits: readonly ExitDef[]
     const c = containers.add(cw, kind, x, z, yaw, undefined, porch ? 'chest-porch' : undefined);
     if (porch) c.extras.push('map_scrap_gulch');
   }
+  // The south quarter's barrels and crates (the butcher's back yard, the sheriff's porch).
+  for (const [kind, x, z, yaw] of SOUTH_CONTAINERS) containers.add(cw, kind, x, z, yaw);
   for (const c of containers.items) group.add(c.object);
   // Fence lines on the camera side of the street.
   fence(batch, cw, -14, 9, -6, 9);
   fence(batch, cw, 9, 9, 19, 9);
+  // The south street: rails and a trough on its camera side; a chicken run behind the house at its
+  // east end (clear of the main street's people, who need room to step back in a fight).
+  hitchingRail(batch, cw, -9, SOUTH_STREET + 4.8);
+  hitchingRail(batch, cw, 12.5, SOUTH_STREET + 4.8);
+  trough(batch, cw, 5, SOUTH_STREET + 5.2);
+  fence(batch, cw, -18, SOUTH_STREET + 7, -10, SOUTH_STREET + 7);
+  fence(batch, cw, 10, SOUTH_STREET + 7, 20, SOUTH_STREET + 7);
+  fence(batch, cw, 14, 14, 24, 14);
+  fence(batch, cw, 24, 14, 24, 21);
 
   // ---------------------------------------------------------------- shooting range (east)
   // Targets face +X (towards the camera side); shoot them from further east.
@@ -141,7 +178,9 @@ export function buildSandboxMap(targets: TargetSystem, exits: readonly ExitDef[]
   const blocked = (x: number, z: number) =>
     (x > -29 && x < 27 && z > -25 && z < 12) ||
     (x > 24 && x < 44 && Math.abs(z) < 14) ||
-    (x > -43 && x < -27 && z > 11 && z < 29);
+    (x > -43 && x < -27 && z > 11 && z < 29) ||
+    // The south quarter, its chicken run and the lane between the streets.
+    (x > -24 && x < 26 && z > 11 && z < SOUTH_STREET + 9);
   const scatter = (count: number, r: number, place: (x: number, z: number) => void) => {
     let tries = 0;
     let placed = 0;
@@ -154,9 +193,10 @@ export function buildSandboxMap(targets: TargetSystem, exits: readonly ExitDef[]
       placed++;
     }
   };
-  scatter(46, 1.6, (x, z) => cactus(batch, cw, x, z, rng));
-  scatter(34, 1.8, (x, z) => rock(batch, cw, x, z, rng));
-  scatter(40, 0.8, (x, z) => shrub(batch, x, z, rng));
+  // (Four times the ground of the old 100 × 100 town: four times the scrub.)
+  scatter(170, 1.6, (x, z) => cactus(batch, cw, x, z, rng));
+  scatter(130, 1.8, (x, z) => rock(batch, cw, x, z, rng));
+  scatter(150, 0.8, (x, z) => shrub(batch, x, z, rng));
   for (const [x, z] of [[-24, 14], [25, 13], [26, -16], [-27, -18]] as const) cactus(batch, cw, x, z, rng);
 
   mesas(batch, rng, HALF, exits);
@@ -193,6 +233,11 @@ export const TOWN_ANIMALS: AnimalSpawn[] = [
   { species: 'cat', at: [12, 6.6], yaw: 2.8, roam: 2.5 },
   { species: 'cat', at: [-16.3, 10.6], yaw: 1.6, roam: 2.5 },
   { species: 'snake', at: [30, 26], yaw: 0.8, roam: 3 },
+  // The south quarter: a dog by the sheriff's, chickens in their run behind the house.
+  { species: 'dog', at: [6, SOUTH_STREET + 1], yaw: 0.6, roam: 8 },
+  { species: 'chicken', at: [18, 17], yaw: 0.2, roam: 3 },
+  { species: 'chicken', at: [20, 18.5], yaw: 2.1, roam: 3 },
+  { species: 'chicken', at: [16.5, 19], yaw: 4, roam: 3 },
 ];
 
 const tileCache = new Map<string, number>();
@@ -205,7 +250,12 @@ function groundColor(x: number, z: number, rng: Rng, first: boolean): number {
   if (r < 0.015) col = PAL.sandPale;
   else if (r < 0.03) col = PAL.sandDark;
   // Main street and wheel ruts.
-  const inStreet = (Math.abs(z) < 4.6 && x > -19.5 && x < 30) || (x > -19.5 && x < -13.5 && z > -14 && z < 14);
+  const inStreet =
+    (Math.abs(z) < 4.6 && x > -19.5 && x < 30) ||
+    (x > -19.5 && x < -13.5 && z > -14 && z < 14) ||
+    // The south street and the lane up to the main one.
+    (Math.abs(z - SOUTH_STREET) < 4.6 && x > -22 && x < 26) ||
+    (x > -1 && x < 4 && z > 4 && z < SOUTH_STREET);
   if (inStreet) {
     col = n < 0.5 ? 0xb08a58 : PAL.sandDark;
     if (Math.abs(Math.abs(z) - 1.6) < 0.5 && r < 0.7) col = 0x8e6c46;

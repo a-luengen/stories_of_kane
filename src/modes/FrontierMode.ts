@@ -235,6 +235,7 @@ export class FrontierMode implements GameMode {
       drawHud: (ctx, W, H) => this.drawHud(ctx, W, H),
       study: (poi) => this.study(poi),
       onNpcDeath: (npc) => this.quests.emit({ type: 'npcKilled', poi: poi.id, npc: npc.def.id }),
+      onAnimalDeath: (a, byPlayer) => this.quests.emit({ type: 'animalKilled', poi: poi.id, species: a.def.id, byPlayer }),
       onContainerOpened: (c) => this.quests.emit({ type: 'containerOpened', poi: poi.id, container: c.id }),
       npcAdded: (npc) => this.wireNpc(s, npc, poi.id),
       journal: this.journalHost(),
@@ -278,7 +279,7 @@ export class FrontierMode implements GameMode {
             wave: () => Infinity,
             title: shop.title,
             merchantName: n.name,
-            buys: (item) => shop.buys.includes(itemDef(item.defId).category),
+            buys: (item) => shop.buys.includes(itemDef(item.defId).category) && (!shop.buysOnly || shop.buysOnly.includes(item.defId)),
           }),
         );
     }

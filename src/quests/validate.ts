@@ -4,6 +4,8 @@ import { QUEST_FORMAT_VERSION, type QuestCatalog, type QuestPack } from './types
 export interface ValidationContext {
   pois: ReadonlySet<string>;
   paths: ReadonlySet<string>;
+  /** Animal species quests can hunt (unchecked if not given). */
+  animals?: ReadonlySet<string>;
   /**
    * Is there already an item with this id outside the pack (the game's own, or another pack's)?
    * With `pack`: items that pack registered itself don't count (it was loaded before in this page,
@@ -360,8 +362,19 @@ export function validatePack(raw: unknown, ctx: ValidationContext, expectedId?: 
         item(s, 'item', path);
         c.num(s, 'count', path, true, 1);
         break;
+      case 'hunt': {
+        const species = c.arr(s, 'species', path);
+        if (species.length === 0) c.err(`${path}.species`, 'needs at least one species');
+        species.forEach((sp, j) => {
+          if (typeof sp !== 'string') c.err(`${path}.species[${j}]`, 'must be a species id');
+          else if (ctx.animals && !ctx.animals.has(sp)) c.err(`${path}.species[${j}]`, `unknown animal "${sp}"`);
+        });
+        c.num(s, 'count', path, true, 1);
+        poiRef(s, 'poi', path, true);
+        break;
+      }
       default:
-        c.err(`${path}.type`, `unknown step type ${JSON.stringify(s.type)} (talk, deliver, goto, defeat, collect)`);
+        c.err(`${path}.type`, `unknown step type ${JSON.stringify(s.type)} (talk, deliver, goto, defeat, collect, hunt)`);
     }
     c.arr(s, 'setup', path, true).forEach((v, j) => setup(v, `${path}.setup[${j}]`));
     actions(s, 'onStart', path);

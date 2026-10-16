@@ -290,7 +290,7 @@ export const CONFIG = {
   },
 
   world: {
-    size: 100,
+    size: 200,
     seed: 1337,
     /** Your horse travels with you if you ride it or it stands this close to the exit. */
     horseFollowRadius: 6,

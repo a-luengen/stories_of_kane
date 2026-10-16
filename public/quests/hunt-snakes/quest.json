@@ -1,0 +1,142 @@
+{
+  "formatVersion": 1,
+  "id": "hunt-snakes",
+  "title": "Contract: Rattlesnakes",
+  "description": "A standing contract with the tanner. Kill two rattlesnakes (one lies in the desert outside town), then report back to her for $45.",
+  "giver": "kanes-crossing:tanner",
+  "modes": [
+    "sandbox"
+  ],
+  "repeatable": true,
+  "steps": [
+    {
+      "id": "hunt",
+      "type": "hunt",
+      "species": [
+        "snake"
+      ],
+      "count": 2,
+      "label": "Rattlesnakes",
+      "objective": "Kill two rattlesnakes (one lies in the desert outside town)"
+    },
+    {
+      "id": "report",
+      "type": "talk",
+      "npc": "kanes-crossing:tanner",
+      "dialog": "report",
+      "objective": "Report back to the tanner",
+      "onComplete": [
+        {
+          "type": "setFlag",
+          "flag": "hunt-next",
+          "value": "bison"
+        }
+      ]
+    }
+  ],
+  "rewards": {
+    "money": 45
+  },
+  "dialogs": [
+    {
+      "id": "offer",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-snakes",
+          "status": "available"
+        }
+      ],
+      "start": "offer",
+      "nodes": [
+        {
+          "id": "offer",
+          "text": "Rattlesnakes. One in the desert just outside town, more in the canyon east of here. Kill two and I make boots of them. Forty-five dollars.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "I'll take the contract.",
+              "do": [
+                {
+                  "type": "startQuest",
+                  "quest": "hunt-snakes"
+                }
+              ],
+              "next": "go"
+            },
+            {
+              "text": "Not now."
+            }
+          ]
+        },
+        {
+          "id": "go",
+          "text": "Good. Come back to me when it is done.",
+          "mood": "greet"
+        }
+      ]
+    },
+    {
+      "id": "report",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-snakes",
+          "status": "active",
+          "step": "report"
+        }
+      ],
+      "start": "done",
+      "nodes": [
+        {
+          "id": "done",
+          "text": "Well? Is it done?",
+          "mood": "greet",
+          "choices": [
+            {
+              "text": "It's done.",
+              "do": [
+                {
+                  "type": "advance"
+                }
+              ],
+              "next": "paid"
+            }
+          ]
+        },
+        {
+          "id": "paid",
+          "text": "Two rattlers. Fine skins. Here you go - and come back, there is always more work.",
+          "mood": "greet"
+        }
+      ]
+    },
+    {
+      "id": "waiting",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-snakes",
+          "status": "active",
+          "step": "hunt"
+        }
+      ],
+      "start": "wait",
+      "nodes": [
+        {
+          "id": "wait",
+          "text": "Still out hunting? Kill two rattlesnakes.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "On it."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

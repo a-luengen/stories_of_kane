@@ -178,6 +178,8 @@ export class QuestRuntime {
         return step.poi ?? (step.area ? splitRef(step.area).poi : null);
       case 'defeat':
         return step.npcs?.length ? splitRef(step.npcs[0]).poi : (this.groupPoi(step) ?? null);
+      case 'hunt':
+        return step.poi ?? null;
       case 'collect': {
         const s = step.setup?.find((x) => x.type === 'placeItem');
         if (!s || s.type !== 'placeItem') return null;
@@ -687,6 +689,16 @@ export class QuestRuntime {
       case 'collect':
         if ((e.type === 'itemAdded' || e.type === 'itemRemoved') && e.item === step.item) this.checkStep(id);
         break;
+      case 'hunt': {
+        if (e.type !== 'animalKilled' || !e.byPlayer || !step.species.includes(e.species)) break;
+        if (step.poi && e.poi !== step.poi) break;
+        const need = step.count ?? 1;
+        q.counter = Math.min(need, q.counter + 1);
+        this.world.toast(`${step.label ?? 'Hunted'} ${q.counter}/${need}`);
+        this.changed();
+        if (q.counter >= need) this.completeStep(id);
+        break;
+      }
       case 'deliver':
         break; // (handed over in the dialog: `deliver` action)
     }

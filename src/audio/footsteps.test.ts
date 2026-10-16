@@ -12,11 +12,12 @@ describe('footstep surface', () => {
   const floors = buildSandboxMap(new TargetSystem()).floors;
 
   it('the sandbox porches are wood; the street and desert are dirt', () => {
-    expect(floors.length).toBe(8); // one porch per building
+    expect(floors.length).toBe(12); // one porch per building (main street 8, south street 4)
     expect(footSurface(-5, -5.5, floors)).toBe('wood'); // saloon porch (north row)
     expect(footSurface(-18.5, -10, floors)).toBe('wood'); // west row porch (faces +X)
     expect(footSurface(0, 0, floors)).toBe('dirt'); // main street
     expect(footSurface(40, 40, floors)).toBe('dirt');
+    expect(footSurface(-14, 30.3, floors)).toBe('wood'); // the butcher's porch (south street)
   });
 
   it('the wave outpost has no wooden floors', () => {

@@ -45,6 +45,86 @@
       ],
       "version": 1,
       "restartable": true
+    },
+    {
+      "id": "hunt-bison",
+      "title": "Contract: Bison Hides",
+      "giver": "kanes-crossing:tanner",
+      "modes": [
+        "sandbox"
+      ],
+      "requires": [
+        {
+          "type": "any",
+          "conds": [
+            {
+              "type": "not",
+              "cond": {
+                "type": "flag",
+                "flag": "hunt-next"
+              }
+            },
+            {
+              "type": "flag",
+              "flag": "hunt-next",
+              "value": "bison"
+            }
+          ]
+        }
+      ],
+      "repeatable": true,
+      "version": 1
+    },
+    {
+      "id": "hunt-wolves",
+      "title": "Contract: Wolf Pelts",
+      "giver": "kanes-crossing:tanner",
+      "modes": [
+        "sandbox"
+      ],
+      "requires": [
+        {
+          "type": "flag",
+          "flag": "hunt-next",
+          "value": "wolves"
+        }
+      ],
+      "repeatable": true,
+      "version": 1
+    },
+    {
+      "id": "hunt-grizzly",
+      "title": "Contract: The Grizzly",
+      "giver": "kanes-crossing:tanner",
+      "modes": [
+        "sandbox"
+      ],
+      "requires": [
+        {
+          "type": "flag",
+          "flag": "hunt-next",
+          "value": "grizzly"
+        }
+      ],
+      "repeatable": true,
+      "version": 1
+    },
+    {
+      "id": "hunt-snakes",
+      "title": "Contract: Rattlesnakes",
+      "giver": "kanes-crossing:tanner",
+      "modes": [
+        "sandbox"
+      ],
+      "requires": [
+        {
+          "type": "flag",
+          "flag": "hunt-next",
+          "value": "snakes"
+        }
+      ],
+      "repeatable": true,
+      "version": 1
     }
   ]
 }

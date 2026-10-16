@@ -1,0 +1,143 @@
+{
+  "formatVersion": 1,
+  "id": "hunt-grizzly",
+  "title": "Contract: The Grizzly",
+  "description": "A standing contract with the tanner. Kill the grizzly on the Desert Plains, then report back to her for $150.",
+  "giver": "kanes-crossing:tanner",
+  "modes": [
+    "sandbox"
+  ],
+  "repeatable": true,
+  "steps": [
+    {
+      "id": "hunt",
+      "type": "hunt",
+      "species": [
+        "bear"
+      ],
+      "count": 1,
+      "label": "Grizzly",
+      "objective": "Kill the grizzly on the Desert Plains",
+      "poi": "desert-plains"
+    },
+    {
+      "id": "report",
+      "type": "talk",
+      "npc": "kanes-crossing:tanner",
+      "dialog": "report",
+      "objective": "Report back to the tanner",
+      "onComplete": [
+        {
+          "type": "setFlag",
+          "flag": "hunt-next",
+          "value": "snakes"
+        }
+      ]
+    }
+  ],
+  "rewards": {
+    "money": 150
+  },
+  "dialogs": [
+    {
+      "id": "offer",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-grizzly",
+          "status": "available"
+        }
+      ],
+      "start": "offer",
+      "nodes": [
+        {
+          "id": "offer",
+          "text": "There is a grizzly on the plains, a big old one. It killed a man last month. A hundred and fifty dollars for it. Do not let it get close.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "I'll take the contract.",
+              "do": [
+                {
+                  "type": "startQuest",
+                  "quest": "hunt-grizzly"
+                }
+              ],
+              "next": "go"
+            },
+            {
+              "text": "Not now."
+            }
+          ]
+        },
+        {
+          "id": "go",
+          "text": "Good. Come back to me when it is done.",
+          "mood": "greet"
+        }
+      ]
+    },
+    {
+      "id": "report",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-grizzly",
+          "status": "active",
+          "step": "report"
+        }
+      ],
+      "start": "done",
+      "nodes": [
+        {
+          "id": "done",
+          "text": "Well? Is it done?",
+          "mood": "greet",
+          "choices": [
+            {
+              "text": "It's done.",
+              "do": [
+                {
+                  "type": "advance"
+                }
+              ],
+              "next": "paid"
+            }
+          ]
+        },
+        {
+          "id": "paid",
+          "text": "You killed the grizzly? You are either brave or a fool. Either way - a hundred and fifty, as promised.",
+          "mood": "greet"
+        }
+      ]
+    },
+    {
+      "id": "waiting",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-grizzly",
+          "status": "active",
+          "step": "hunt"
+        }
+      ],
+      "start": "wait",
+      "nodes": [
+        {
+          "id": "wait",
+          "text": "Still out hunting? Kill the grizzly on the Desert Plains.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "On it."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

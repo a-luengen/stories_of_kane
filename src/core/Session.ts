@@ -66,6 +66,8 @@ export interface SessionOptions {
 export interface SessionHooks {
   /** The player's HP hit 0 (they have already fallen). */
   onPlayerDeath(): void;
+  /** An animal was killed by a bullet. */
+  onAnimalDeath?(animal: Animal, byPlayer: boolean): void;
   /** An NPC was killed by a bullet. */
   onNpcDeath?(npc: Npc, byPlayer: boolean): void;
   /** Every fixed simulation step, after the world update. */
@@ -831,6 +833,7 @@ export class Session implements PoiRuntime {
       if (kind !== 'blood') this.particles.burst('spark', imp.point, imp.normal, 0.5);
       if (imp.target === this.player) this.engine.rig.addTrauma(0.35);
       if (hitNpc && wasAlive && !hitNpc.alive) this.hooks.onNpcDeath?.(hitNpc, byPlayer);
+      if (hitAnimal && wasAlive && !hitAnimal.alive) this.hooks.onAnimalDeath?.(hitAnimal, byPlayer);
       return;
     }
     this.sound.impact(imp, null);

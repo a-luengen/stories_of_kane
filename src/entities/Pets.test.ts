@@ -32,7 +32,7 @@ describe('town pets', () => {
     const dogs = TOWN_ANIMALS.filter((a) => a.species === 'dog');
     const cats = TOWN_ANIMALS.filter((a) => a.species === 'cat');
     expect(dogs.length).toBeGreaterThanOrEqual(2);
-    expect(dogs.length).toBeLessThanOrEqual(3);
+    expect(dogs.length).toBeLessThanOrEqual(4); // (one more in the south quarter)
     expect(cats.length).toBeGreaterThanOrEqual(2);
     expect(cats.length).toBeLessThanOrEqual(3);
     for (const a of TOWN_ANIMALS) expect(nav.isFree(a.at[0], a.at[1]), `${a.species} at ${a.at}`).toBe(true);

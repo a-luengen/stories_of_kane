@@ -81,9 +81,8 @@ export function shade(hex: number, f: number): number {
 }
 
 /** 200×200 ground of 1-unit tiles coloured per tile (two triangles share a colour). */
-export function buildGround(groundColor: (x: number, z: number, rng: Rng, first: boolean) => number): THREE.Mesh {
-  const size = 200;
-  const seg = 200; // 1 unit tiles
+export function buildGround(groundColor: (x: number, z: number, rng: Rng, first: boolean) => number, size = 200): THREE.Mesh {
+  const seg = size; // 1 unit tiles
   const geo = new THREE.PlaneGeometry(size, size, seg, seg).toNonIndexed();
   geo.rotateX(-Math.PI / 2);
   geo.deleteAttribute('uv');

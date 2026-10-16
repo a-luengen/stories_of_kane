@@ -60,7 +60,11 @@ export function capturePoi(rt: PoiRuntime): PoiSnapshot {
 
 /** Make a freshly built map look the way it was left. */
 export function applyPoi(rt: PoiRuntime, snap: PoiSnapshot): void {
-  snap.containers.forEach((s, i) => rt.containers[i]?.restore(s));
+  // (A container that refills, as the gun range's chests do, is full again instead.)
+  snap.containers.forEach((s, i) => {
+    const c = rt.containers[i];
+    if (c && !c.refills) c.restore(s);
+  });
   for (const x of snap.extraNpcs ?? []) rt.spawnNpc(x.def).restore(x.state);
   for (const s of snap.npcs) rt.npcList.find((n) => n.def.id === s.id)?.restore(s);
   rt.clearGroundItems();

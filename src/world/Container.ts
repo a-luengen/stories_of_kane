@@ -62,7 +62,8 @@ const OPEN_TIME = 0.45;
 export class LootContainer implements Interactable {
   readonly object = new THREE.Group();
   readonly inventory: GridContainer;
-  readonly name: string;
+  /** Shown over the loot view and as the prompt ("Revolver Chest"); the type's name by default. */
+  name: string;
   readonly priority = 1;
   readonly promptHeight: number;
   readonly range: number;
@@ -76,6 +77,10 @@ export class LootContainer implements Interactable {
   id = '';
   /** Item ids always found inside (a map scrap), placed before the rolled loot. */
   extras: string[] = [];
+  /** Fixed contents instead of rolled loot (the gun range's chests). */
+  stock: { item: string; quantity: number }[] | null = null;
+  /** Full again every time you come back to its place (not kept as you left it). */
+  refills = false;
   /** Lid open (stays open once opened, until a restock closes it). */
   opened = false;
   private seed: number;
@@ -256,6 +261,10 @@ export class LootContainer implements Interactable {
     this.generated = true;
     const t = CONTAINER_TYPES[this.kind];
     for (const id of this.extras) this.inventory.placeAnywhere(createItem(id));
+    if (this.stock) {
+      for (const s of this.stock) this.inventory.placeAnywhere(createItem(s.item, s.quantity));
+      return;
+    }
     const rng = new Rng(this.seed);
     fillWithLoot(this.inventory, t.table, rng.int(t.count[0], t.count[1] + 1), rng, this.wave);
   }

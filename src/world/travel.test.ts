@@ -24,7 +24,7 @@ const exitOf = (poi: string, id: string) => poiById(SANDBOX_WORLD, poi).exits.fi
 describe('world data', () => {
   it('the sandbox world is valid: ids, links, reachability, builders', () => {
     expect(validateWorld(SANDBOX_WORLD, Object.keys(POI_MAPS))).toEqual([]);
-    expect(SANDBOX_WORLD.pois.map((p) => p.name)).toEqual(["Kane's Crossing", 'Two Spurs Ranch', 'Rattlesnake Gulch', 'Desert Plains']);
+    expect(SANDBOX_WORLD.pois.map((p) => p.name)).toEqual(["Kane's Crossing", 'Two Spurs Ranch', 'Rattlesnake Gulch', 'Desert Plains', 'Gun Range']);
   });
 
   it('catches broken links, unreachable places, duplicates and missing builders', () => {
@@ -50,10 +50,11 @@ describe('exits', () => {
   const east = exitOf('kanes-crossing', 'east');
 
   it('the prompt applies inside the zone only', () => {
-    expect(insideExit({ x: 47, z: 0 }, east)).toBe(true);
-    expect(insideExit({ x: 45, z: 3 }, east)).toBe(true);
-    expect(insideExit({ x: 43, z: 0 }, east)).toBe(false);
-    expect(insideExit({ x: 47, z: 4 }, east)).toBe(false);
+    const [ex, ez] = east.at;
+    expect(insideExit({ x: ex, z: ez }, east)).toBe(true);
+    expect(insideExit({ x: ex - 2, z: ez + 3 }, east)).toBe(true);
+    expect(insideExit({ x: ex - 4, z: ez }, east)).toBe(false);
+    expect(insideExit({ x: ex, z: ez + 4 }, east)).toBe(false);
   });
 
   it('no travelling while someone is shooting at you', () => {
@@ -64,14 +65,14 @@ describe('exits', () => {
 
   it('the horse comes along when ridden or near the exit', () => {
     expect(horseTravels(true, { x: -40, z: 0 }, east)).toBe(true);
-    expect(horseTravels(false, { x: 44, z: 2 }, east)).toBe(true);
-    expect(horseTravels(false, { x: 47 - CONFIG.world.horseFollowRadius - 1, z: 0 }, east)).toBe(false);
+    expect(horseTravels(false, { x: east.at[0] - 3, z: 2 }, east)).toBe(true);
+    expect(horseTravels(false, { x: east.at[0] - CONFIG.world.horseFollowRadius - 1, z: 0 }, east)).toBe(false);
   });
 
   it('the town map has a trail sign at each exit, and the trails are walkable', () => {
     const exits = poiById(SANDBOX_WORLD, 'kanes-crossing').exits;
     const map = buildSandboxMap(new TargetSystem(), exits);
-    expect(map.exitSigns.map((s) => s.exit)).toEqual(['east', 'north']);
+    expect(map.exitSigns.map((s) => s.exit)).toEqual(['east', 'north', 'south']);
     const nav = new NavGrid(map.collision, map.half);
     for (const e of exits) {
       expect(nav.isFree(e.arrive[0], e.arrive[1]), `${e.id} arrival`).toBe(true);

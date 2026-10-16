@@ -141,8 +141,8 @@ describe('containers', () => {
   it('both maps have them: barrels and crates, plus ammo boxes, weapon crates and chests', () => {
     const count = (cs: LootContainer[], k: LootContainer['kind']) => cs.filter((c) => c.kind === k).length;
     const sb = buildSandboxMap(new TargetSystem()).containers;
-    expect(count(sb, 'barrel')).toBe(13);
-    expect(count(sb, 'crate')).toBe(5);
+    expect(count(sb, 'barrel')).toBe(16); // (13 on the main street, 3 on the south street)
+    expect(count(sb, 'crate')).toBe(6);
     expect(count(sb, 'ammoBox')).toBeGreaterThanOrEqual(4);
     expect(count(sb, 'weaponCrate')).toBe(2);
     expect(count(sb, 'chest')).toBe(2);

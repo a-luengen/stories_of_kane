@@ -1,0 +1,143 @@
+{
+  "formatVersion": 1,
+  "id": "hunt-bison",
+  "title": "Contract: Bison Hides",
+  "description": "A standing contract with the tanner. Shoot three bison on the Desert Plains, west of the ranch, then report back to her for $60.",
+  "giver": "kanes-crossing:tanner",
+  "modes": [
+    "sandbox"
+  ],
+  "repeatable": true,
+  "steps": [
+    {
+      "id": "hunt",
+      "type": "hunt",
+      "species": [
+        "bison"
+      ],
+      "count": 3,
+      "label": "Bison",
+      "objective": "Shoot three bison on the Desert Plains, west of the ranch",
+      "poi": "desert-plains"
+    },
+    {
+      "id": "report",
+      "type": "talk",
+      "npc": "kanes-crossing:tanner",
+      "dialog": "report",
+      "objective": "Report back to the tanner",
+      "onComplete": [
+        {
+          "type": "setFlag",
+          "flag": "hunt-next",
+          "value": "wolves"
+        }
+      ]
+    }
+  ],
+  "rewards": {
+    "money": 60
+  },
+  "dialogs": [
+    {
+      "id": "offer",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-bison",
+          "status": "available"
+        }
+      ],
+      "start": "offer",
+      "nodes": [
+        {
+          "id": "offer",
+          "text": "I need bison hides, and plenty. The herd grazes the plains west of Two Spurs Ranch. Bring down three and I pay sixty dollars.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "I'll take the contract.",
+              "do": [
+                {
+                  "type": "startQuest",
+                  "quest": "hunt-bison"
+                }
+              ],
+              "next": "go"
+            },
+            {
+              "text": "Not now."
+            }
+          ]
+        },
+        {
+          "id": "go",
+          "text": "Good. Come back to me when it is done.",
+          "mood": "greet"
+        }
+      ]
+    },
+    {
+      "id": "report",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-bison",
+          "status": "active",
+          "step": "report"
+        }
+      ],
+      "start": "done",
+      "nodes": [
+        {
+          "id": "done",
+          "text": "Well? Is it done?",
+          "mood": "greet",
+          "choices": [
+            {
+              "text": "It's done.",
+              "do": [
+                {
+                  "type": "advance"
+                }
+              ],
+              "next": "paid"
+            }
+          ]
+        },
+        {
+          "id": "paid",
+          "text": "Three bison? Good, clean work. Here is your money - and I buy the hides too, if you skinned them.",
+          "mood": "greet"
+        }
+      ]
+    },
+    {
+      "id": "waiting",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-bison",
+          "status": "active",
+          "step": "hunt"
+        }
+      ],
+      "start": "wait",
+      "nodes": [
+        {
+          "id": "wait",
+          "text": "Still out hunting? Shoot three bison on the Desert Plains, west of the ranch.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "On it."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

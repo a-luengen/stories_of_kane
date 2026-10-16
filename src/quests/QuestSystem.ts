@@ -1,5 +1,6 @@
 import type { WorldDef } from '../data/world';
 import { hasItemDef, itemDef } from '../items/ItemDef';
+import { ANIMALS } from '../data/animals';
 import { fetchJson, loadCatalog, questBase, type FetchJson } from './catalog';
 import type { QuestEvent } from './events';
 import { registerQuestItems } from './items';
@@ -52,7 +53,7 @@ export class QuestSystem {
       base,
       get: opts.get ?? fetchJson,
       hooks: opts.hooks,
-      ctx: { pois, paths, itemExists: (id, pack) => hasItemDef(id) && (pack === undefined || itemDef(id).quest?.id !== pack) },
+      ctx: { pois, paths, animals: new Set(Object.keys(ANIMALS)), itemExists: (id, pack) => hasItemDef(id) && (pack === undefined || itemDef(id).quest?.id !== pack) },
       version: (id) => this.catalog.find((e) => e.id === id)?.version ?? 1,
       onLoaded: (lp) => {
         if (opts.registerItems !== false) registerQuestItems(lp.pack, base);

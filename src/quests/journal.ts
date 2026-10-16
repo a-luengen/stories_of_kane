@@ -55,7 +55,7 @@ export function journalEntries(rt: QuestRuntime, w: JournalWords): JournalQuest[
     return w.npcName(ref) ?? humanize(id);
   };
   const progress = (step: StepDef, counter: number): string | undefined => {
-    if (step.type === 'collect') return `${counter}/${step.count ?? 1}`;
+    if (step.type === 'collect' || step.type === 'hunt') return `${counter}/${step.count ?? 1}`;
     if (step.type === 'defeat') {
       const need = step.count ?? step.npcs?.length ?? 0;
       return need > 1 ? `${counter}/${need}` : undefined;

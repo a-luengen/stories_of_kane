@@ -36,9 +36,9 @@ function setup() {
 describe('NPCs', () => {
   it('spawn with names, distinct outfits and the configured weapons', () => {
     const { sys } = setup();
-    expect(sys.npcs).toHaveLength(6);
+    expect(sys.npcs).toHaveLength(11);
     for (const n of sys.npcs) expect(n.name).toMatch(/^\w+ \w+$/);
-    expect(sys.npcs.map((n) => n.weaponDef?.id ?? null)).toEqual(['revolver', null, 'rifle', 'shotgun', null, null]);
+    expect(sys.npcs.map((n) => n.weaponDef?.id ?? null)).toEqual(['revolver', null, 'rifle', 'shotgun', null, null, null, null, 'nickel_revolver', null, 'revolver']);
     expect(sys.npcs.every((n) => n.mode === 'routine')).toBe(true);
   });
 

@@ -79,7 +79,7 @@ describe('the story world', () => {
 
 describe('the quest content', () => {
   it('every pack is valid in the world of each of its modes', () => {
-    expect(Object.keys(PACKS)).toHaveLength(3);
+    expect(Object.keys(PACKS)).toHaveLength(7);
     for (const p of Object.values(PACKS)) {
       for (const mode of p.modes) {
         const v = validatePack(p, ctxFor(mode), p.id);
@@ -97,7 +97,7 @@ describe('the quest content', () => {
 
   it('the sandbox offers only its own quests; the story begins with the storyStart one', () => {
     const forMode = (m: QuestMode) => CATALOG.quests.filter((e: CatalogEntry) => e.modes.includes(m)).map((e) => e.id);
-    expect(forMode('sandbox')).toEqual(['the-lost-letter']);
+    expect(forMode('sandbox')).toEqual(['the-lost-letter', 'hunt-bison', 'hunt-wolves', 'hunt-grizzly', 'hunt-snakes']);
     expect(forMode('story')).toEqual(['the-lost-letter', 'bounty-on-the-ridge', 'errand-against-the-clock']);
     expect(CATALOG.quests.filter((e) => e.storyStart).map((e) => e.id)).toEqual(['the-lost-letter']);
   });
@@ -255,7 +255,7 @@ describe('Errand Against the Clock', () => {
 
 describe('the sandbox', () => {
   it('its world is its own: the Ridge isn\'t one of its places', () => {
-    expect(SANDBOX_WORLD.pois.map((p) => p.id)).toEqual(['kanes-crossing', 'two-spurs-ranch', 'rattlesnake-gulch', 'desert-plains']);
+    expect(SANDBOX_WORLD.pois.map((p) => p.id)).toEqual(['kanes-crossing', 'two-spurs-ranch', 'rattlesnake-gulch', 'desert-plains', 'gun-range']);
     expect(validatePack(packOf('bounty-on-the-ridge'), ctxFor('sandbox'), 'bounty-on-the-ridge').ok).toBe(false);
   });
 });

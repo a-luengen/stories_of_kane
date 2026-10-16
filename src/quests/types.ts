@@ -109,6 +109,8 @@ export type StepDef = StepBase &
     /** Kill these quest NPCs, or `count` from a quest-spawned group. */
     | { type: 'defeat'; npcs?: Ref[]; group?: string; count?: number }
     | { type: 'collect'; item: string; count?: number }
+    /** Shoot `count` animals of these species (wherever, or only on `poi`), counted. */
+    | { type: 'hunt'; species: string[]; count?: number; poi?: string }
   );
 
 export type StepType = StepDef['type'];

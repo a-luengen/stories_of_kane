@@ -57,13 +57,17 @@ describe('animal data', () => {
     }
   });
 
-  it('the trading post buys meat, leather and feathers', () => {
-    const shop = MERCHANT_SHOPS.gunsmith;
-    const economy = new Economy(shop.stock);
-    for (const id of ['meat', 'leather', 'feathers']) {
-      expect(shop.buys).toContain(ITEMS[id].category);
-      expect(economy.sellValue(createItem(id)), id).toBeGreaterThan(0);
-    }
+  it('the butcher buys meat, the tanner leather, pelts and feathers (the gunsmith neither)', () => {
+    const buys = (shop: keyof typeof MERCHANT_SHOPS, id: string) => MERCHANT_SHOPS[shop].buys.includes(ITEMS[id].category) && (!MERCHANT_SHOPS[shop].buysOnly || MERCHANT_SHOPS[shop].buysOnly!.includes(id));
+    expect(['meat', 'leather', 'pelt', 'bear_pelt', 'feathers'].map((id) => [buys('butcher', id), buys('tanner', id), buys('gunsmith', id)])).toEqual([
+      [true, false, false],
+      [false, true, false],
+      [false, true, false],
+      [false, true, false],
+      [false, true, false],
+    ]);
+    const economy = new Economy(MERCHANT_SHOPS.tanner.stock);
+    for (const id of ['meat', 'leather', 'feathers']) expect(economy.sellValue(createItem(id)), id).toBeGreaterThan(0);
     expect(economy.sellValue(createItem('meat', 4))).toBe(4 * economy.sellValue(createItem('meat')));
     expect(economy.sellValue(createItem('leather'))).toBeGreaterThan(economy.sellValue(createItem('meat', 3)));
   });

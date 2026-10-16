@@ -1,0 +1,143 @@
+{
+  "formatVersion": 1,
+  "id": "hunt-wolves",
+  "title": "Contract: Wolf Pelts",
+  "description": "A standing contract with the tanner. Kill three wolves on the Desert Plains, then report back to her for $90.",
+  "giver": "kanes-crossing:tanner",
+  "modes": [
+    "sandbox"
+  ],
+  "repeatable": true,
+  "steps": [
+    {
+      "id": "hunt",
+      "type": "hunt",
+      "species": [
+        "wolf"
+      ],
+      "count": 3,
+      "label": "Wolves",
+      "objective": "Kill three wolves on the Desert Plains",
+      "poi": "desert-plains"
+    },
+    {
+      "id": "report",
+      "type": "talk",
+      "npc": "kanes-crossing:tanner",
+      "dialog": "report",
+      "objective": "Report back to the tanner",
+      "onComplete": [
+        {
+          "type": "setFlag",
+          "flag": "hunt-next",
+          "value": "grizzly"
+        }
+      ]
+    }
+  ],
+  "rewards": {
+    "money": 90
+  },
+  "dialogs": [
+    {
+      "id": "offer",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-wolves",
+          "status": "available"
+        }
+      ],
+      "start": "offer",
+      "nodes": [
+        {
+          "id": "offer",
+          "text": "The wolf packs on the plains have been at the ranch calves. Kill three of them. Ninety dollars. They hunt together - so mind your back.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "I'll take the contract.",
+              "do": [
+                {
+                  "type": "startQuest",
+                  "quest": "hunt-wolves"
+                }
+              ],
+              "next": "go"
+            },
+            {
+              "text": "Not now."
+            }
+          ]
+        },
+        {
+          "id": "go",
+          "text": "Good. Come back to me when it is done.",
+          "mood": "greet"
+        }
+      ]
+    },
+    {
+      "id": "report",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-wolves",
+          "status": "active",
+          "step": "report"
+        }
+      ],
+      "start": "done",
+      "nodes": [
+        {
+          "id": "done",
+          "text": "Well? Is it done?",
+          "mood": "greet",
+          "choices": [
+            {
+              "text": "It's done.",
+              "do": [
+                {
+                  "type": "advance"
+                }
+              ],
+              "next": "paid"
+            }
+          ]
+        },
+        {
+          "id": "paid",
+          "text": "Three wolves fewer. The ranchers will sleep easier. Your ninety dollars.",
+          "mood": "greet"
+        }
+      ]
+    },
+    {
+      "id": "waiting",
+      "npc": "kanes-crossing:tanner",
+      "if": [
+        {
+          "type": "quest",
+          "quest": "hunt-wolves",
+          "status": "active",
+          "step": "hunt"
+        }
+      ],
+      "start": "wait",
+      "nodes": [
+        {
+          "id": "wait",
+          "text": "Still out hunting? Kill three wolves on the Desert Plains.",
+          "mood": "calm",
+          "choices": [
+            {
+              "text": "On it."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

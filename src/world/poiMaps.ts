@@ -40,6 +40,10 @@ export const POI_MAPS: Record<string, () => Promise<PoiMap>> = {
     const m = await import('./maps/desertPlains');
     return { build: m.buildPlainsMap, npcs: [], animals: m.PLAINS_ANIMALS };
   },
+  'gun-range': async () => {
+    const m = await import('./maps/gunRange');
+    return { build: m.buildRangeMap, npcs: m.RANGE_NPCS };
+  },
   // Story: nobody lives on the Ridge; quests bring the bandits (and whoever else).
   'the-ridge': async () => ({ build: (await import('./maps/theRidge')).buildRidgeMap, npcs: [] }),
 };
